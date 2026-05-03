@@ -17,21 +17,46 @@
 
 **Constraints:** MULA + LN/EXP cannot issue in the same cycle (hardware interlock).
 
+## Register File Architecture
+
+```
+Arch Regs: 0–31 (32 registers, ISA-visible)
+Phys Regs: 0–99 (100 registers, OOO backend)
+Rename Pool: 32–99 (68 rename registers)
+
+Pool layout per primitive:
+  Working pool:   base..base+count-1  (dst rotates, may create WAW hazards)
+  Const pool:     28–31               (src only, never written → always ready)
+```
+
+| RegState | Base | Count | Purpose |
+|----------|------|-------|---------|
+| DEFAULT | 0 | 8 | MULA/MUL/ADD dst rotation |
+| DEFAULT | 28 | 4 | Const src pool (never written) |
+| `ChainRegState` | 0 | 4 | RAW chain dst (src0 = prev dst) |
+
+Each primitive creates its own `RegState` instances, isolating register namespaces per instruction stream. Within a stream, dsts rotate through the working pool; srcs always come from the const pool (regs 28–31) unless a RAW chain is explicitly constructed.
+
 ## Primitive Generators
 
-| Generator | Instruction Pattern | Token/cy |
-|-----------|---------------------|----------|
-| `_mula2`  | EXQ0:MULA + EXQ1:MULA | 6 |
-| `_mal`    | EXQ0:MUL + EXQ1:ADD + LNQ:LN | 8 |
-| `_muladd` | EXQ0:MUL + EXQ1:ADD | 4 |
-| `_mula1`  | EXQ0:MULA | 3 |
-| `_mov`    | EXQ0:MOV | 1 |
-| `_ld_burst` | LD→idle×9→MULA×2×8 (repeat) | ~2.7 avg |
-| `_serial_mula` | MULA→idle×4 (repeat) | 0.6 |
-| `_alternating` | MULA×2×chunk ↔ MAL×chunk | 6↔8 |
-| `_rand_mixed` | Weighted random mix (see §BM8) | ~2.5 avg |
+| Generator | Instruction Pattern | Token/cy | Register Deps |
+|-----------|---------------------|----------|---------------|
+| `_mula2`  | EXQ0:MULA + EXQ1:MULA | 6 | EXQ0 pool r0–7, EXQ1 pool r8–15, independent |
+| `_mal`    | EXQ0:MUL + EXQ1:ADD + LNQ:LN | 8 | MUL r0–7, ADD r8–11, LN r12–15, independent |
+| `_muladd` | EXQ0:MUL + EXQ1:ADD | 4 | MUL r0–7, ADD r8–11, independent |
+| `_mula1`  | EXQ0:MULA | 3 | Pool r0–7, independent |
+| `_mov`    | EXQ0:MOV | 1 | Pool r24–25, independent |
+| `_ld_burst` | LD→idle×9→MULA×2×8 (repeat) | ~2.7 avg | **RAW**: LD dst(r16–17) → MULA src0 |
+| `_serial_mula` | MULA→idle×4 (repeat) | 0.6 | **RAW chain**: dst(N) → src0(N+1), pool r0–3 |
+| `_alternating` | MULA×2×chunk ↔ MAL×chunk | 6↔8 | Per-phase RegState (fresh each chunk) |
+| `_rand_mixed` | Weighted random mix (see §BM8) | ~2.5 avg | 9 RegState pools, shared within pattern |
 
 **Idle:** `_idle(n)` = n cycles of `InstrGroup()` (all ports empty, token=0).
+
+**Dependency types:**
+- **Independent:** srcs from const pool (r28–31), dst rotates in working pool — no RAW hazards between consecutive instructions
+- **RAW chain:** `ChainRegState` makes src0 = previous instruction's dst — forces pipeline serialization
+- **Cross-op RAW:** LD writes to register, subsequent MULA reads it (BM3 `_ld_burst`)
 
 ## Task Model
 
@@ -46,10 +71,13 @@ For multi-task benchmarks, task N+1's notice overlays on task N's tail (replaces
 
 ## BM1 — mula_steady_state
 
-**单Task×3Func: MULA×2稳态**
+**单Task×3Func: MULA×2稳态 (independent regs)**
 
 ```
 func_n = max(100, (2000 - 300 - 160) // 3) = 513
+
+EXQ0 pool r0–7, EXQ1 pool r8–15, const srcs r28–31. No RAW chains.
+```
 
  0..299   notice 300 (idle, task_notice=300→1)
 300..812   Func1: MULA×2 ×513  (EXQ0:MULA + EXQ1:MULA)
@@ -102,14 +130,21 @@ func_n = max(100, (2000 - 300 - 160) // 3) = 513
 
 ## BM3 — ld_ex_kernel
 
-**单Task×4Func: LD窗口+MULA×2爆发**
+**单Task×4Func: LD窗口+MULA×2爆发 (LD→MULA RAW)**
 
 ```
 func_n = max(80, (2000 - 300 - 240) // 4) = 365
 
-Each func: LD-burst pattern repeating
+Each func: LD-burst pattern repeating, RegState pools MULA0(0,8) MULA1(8,8) LD(16,2)
   LD×1 → idle×9 → MULA×2×8 → ...
   = 18 cycles/block: 1 LD + 9 idle + 8 MULA×2
+
+Register deps (per 18-cycle block):
+  LD  dst=r16              ← LD writes to ld pool
+  idle ×9                  ← LD depth=10, completes during idle window
+  MULA×2×8:
+    EXQ0 src0=r16          ← RAW from LD dst (r16), const srcs for rest
+    EXQ1 srcs=const pool   ← independent
 
  0..299   notice 300
 300..664   Func1: LD-burst ×365 (20 full blocks = 360cy)
@@ -135,14 +170,28 @@ Each func: LD-burst pattern repeating
 
 ## BM4 — serial_dependency
 
-**单Task×4Func: 串行MULA依赖链**
+**单Task×4Func: 串行MULA依赖链 (RAW chain)**
 
 ```
 func_n = max(60, (2000 - 300 - 240) // 4) = 365
 
-Each func: one MULA every 5 cycles
+Each func: one MULA every 5 cycles, ChainRegState(0, 4)
   MULA×1 → idle×4 → MULA×1 → idle×4 → ...
   = 73 MULA per func (365/5)
+
+RAW chain (src0 = previous dst):
+  cy300: r0  = mula(r28, r29, r30)   ← first, src0 from const pool
+  cy305: r1  = mula(r0,  r31, r28)   ← RAW on r0 (MULA depth=9, issue gap=5 → STALL)
+  cy310: r2  = mula(r1,  r29, r30)   ← RAW on r1
+  cy315: r3  = mula(r2,  r31, r28)   ← RAW on r2
+  cy320: r0  = mula(r3,  r29, r30)   ← pool wraps, RAW on r3
+  ...
+
+Pipeline behavior:
+  - MULA0 issued @ cy300, completes WB @ cy309 (depth 9)
+  - MULA1 decoded @ cy305, src=r0 not ready until cy309 → waits in EXQ
+  - MULA1 issues @ cy310 (5 cycles of bubble)
+  - IPC drops to ~79% (was 100% without register deps)
 
  0..299   notice 300
 300..664   Func1: MULA/idle×73 blocks
@@ -156,13 +205,13 @@ Each func: one MULA every 5 cycles
 
 | Queue | Pattern | Total Instr |
 |-------|---------|-------------|
-| EXQ0  | (mula×1, idle×4)×73 per func | 73 MULA per func (×4 = 292) |
+| EXQ0  | (mula×1, idle×4)×73 per func, chained r0→r1→r2→r3→r0 | 73 MULA per func (×4 = 292) |
 | EXQ1  | idle ×2000 | — |
 | LNQ   | idle ×2000 | — |
 | LDQ   | idle ×2000 | — |
 | STQ   | idle ×2000 | — |
 
-**Stats:** 292 instructions, 876 tokens, lowest load (0.44 tok/cy avg). Tests idle→ramp→idle transitions.
+**Stats:** 292 instructions, 876 tokens. IPC ~79% due to RAW chain serialization. Tests pipeline dependency stalls under throttle.
 
 ---
 
@@ -358,15 +407,17 @@ Task5 (MOV):         ~640..1019 notice overlay, 1020..1179 Func1+Func2
 
 ## Summary
 
-| BM  | Tasks | Functions | Pattern | Instr | Tokens | Tok/cy | Peak tok/cy |
-|-----|-------|-----------|---------|-------|--------|--------|-------------|
-| BM1 | 1     | 3         | MULA×2 steady | 3078 | 9234 | 4.62 | 6 |
-| BM2 | 1     | 3         | MAX load | 4617 | 12312 | 6.16 | 8 |
-| BM3 | 1     | 4         | LD-burst | 1364 | 3840 | 1.92 | 6 |
-| BM4 | 1     | 4         | Serial MULA | 292 | 876 | 0.44 | 3 |
-| BM5 | 1     | 4         | MULA↔MAL交替 | 3650 | 10220 | 5.11 | 8 |
-| BM6 | 1     | 2         | LN主导长跑 | 4860 | 12960 | 6.48 | 8 |
-| BM7 | 1     | 4         | SW谐振 | 2920 | 8760 | 4.38 | 6 |
-| BM8 | 2     | 2×2       | OOO混合 | 2006 | 4950 | 2.48 | 8 |
-| BM9 | 4     | 2×4       | 4路流水线 | 954 | 2672 | 1.34 | 8 |
-| BM10| 5     | 2×5       | 5路流水线 | 1215 | 3262 | 1.63 | 8 |
+| BM  | Tasks | Functions | Pattern | Deps | Instr | Tokens | Tok/cy | Peak | IPC(no-throt) |
+|-----|-------|-----------|---------|------|-------|--------|--------|------|---------------|
+| BM1 | 1     | 3         | MULA×2 steady | None | 3078 | 9234 | 4.62 | 6 | 100% |
+| BM2 | 1     | 3         | MAX load | None | 4617 | 12312 | 6.16 | 8 | 100% |
+| BM3 | 1     | 4         | LD-burst | LD→MULA RAW | 1364 | 3840 | 1.92 | 6 | 100% |
+| BM4 | 1     | 4         | Serial MULA | **RAW chain** | 292 | 876 | 0.44 | 3 | **79%** |
+| BM5 | 1     | 4         | MULA↔MAL交替 | None (per-phase) | 3650 | 10220 | 5.11 | 8 | 100% |
+| BM6 | 1     | 2         | LN主导长跑 | None | 4860 | 12960 | 6.48 | 8 | 100% |
+| BM7 | 1     | 4         | SW谐振 | None | 2920 | 8760 | 4.38 | 6 | 100% |
+| BM8 | 2     | 2×2       | OOO混合 | Mixed (shared pools) | 2006 | 4950 | 2.48 | 8 | 100% |
+| BM9 | 4     | 2×4       | 4路流水线 | T4: RAW chain | 954 | 2672 | 1.34 | 8 | 99% |
+| BM10| 5     | 2×5       | 5路流水线 | Per-task | 1215 | 3262 | 1.63 | 8 | 100% |
+
+**Deps:** "None" = independent (const-pool srcs, no RAW). BM4 is the only benchmark with a strict RAW chain per instruction.

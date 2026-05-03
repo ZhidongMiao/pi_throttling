@@ -62,17 +62,30 @@ MAX_DEC_BW = 5   # max instructions decoded per cycle
 # LD_LAT removed — LD pipeline depth is PIPE_DEPTH["ld"] = 10.
 
 # ══════════════════════════════════════════════════════════════════════
-# InstrGroup (backward compatible)
+# InstrGroup
 # ══════════════════════════════════════════════════════════════════════
 @dataclass
 class InstrGroup:
-    """One cycle's instruction issue across 5 ports."""
+    """One cycle's instruction issue across 5 ports.
+
+    Register operands (optional): when provided, the pipeline model uses these
+    arch register numbers for renaming and dependency checking.  When omitted
+    (all fields -1/empty), legacy auto-allocation is used for backward compat.
+    """
     exq0: Optional[str] = None   # EXQ0: MULA|MUL|ADD|MOV
     exq1: Optional[str] = None   # EXQ1: MULA|MUL|ADD|MOV
     lnq:  Optional[str] = None   # LNQ:  LN|EXP
     ldq:  Optional[str] = None   # LDQ:  LD
     stq:  Optional[str] = None   # STQ:  ST
-    task_notice: int = 0          # cycles until next task starts (0 = no upcoming task)
+    task_notice: int = 0
+
+    # Arch register operands per port (dst=-1 means no dst, e.g. ST, NOP)
+    # src/dst refer to arch register numbers 0–31
+    e0_dst: int = -1;  e0_src: tuple = ()
+    e1_dst: int = -1;  e1_src: tuple = ()
+    ln_dst: int = -1;  ln_src: tuple = ()
+    ld_dst: int = -1;  ld_src: tuple = ()
+    st_dst: int = -1;  st_src: tuple = ()
 
     @property
     def total_token(self) -> int:
@@ -101,9 +114,14 @@ class InstrGroup:
         return result
 
 
-def mg(e0=None, e1=None, lnq=None, ldq=None, stq=None) -> InstrGroup:
-    """Shorthand constructor for InstrGroup."""
-    return InstrGroup(exq0=e0, exq1=e1, lnq=lnq, ldq=ldq, stq=stq)
+def mg(e0=None, e1=None, lnq=None, ldq=None, stq=None,
+       e0_dst=-1, e0_src=(), e1_dst=-1, e1_src=(),
+       ln_dst=-1, ln_src=(), ld_dst=-1, ld_src=(), st_dst=-1, st_src=()) -> InstrGroup:
+    """Shorthand constructor for InstrGroup with optional arch register operands."""
+    return InstrGroup(exq0=e0, exq1=e1, lnq=lnq, ldq=ldq, stq=stq,
+                      e0_dst=e0_dst, e0_src=e0_src, e1_dst=e1_dst, e1_src=e1_src,
+                      ln_dst=ln_dst, ln_src=ln_src, ld_dst=ld_dst, ld_src=ld_src,
+                      st_dst=st_dst, st_src=st_src)
 
 
 def is_legal_issue(grp: InstrGroup) -> bool:
@@ -298,34 +316,58 @@ class PipelineModel:
                     self._stall_buf.append((port, op))
                     continue
 
-            self._accept(port, op)
+            self._accept(port, op, grp)
             accepted += 1
 
         return accepted
 
-    def _accept(self, port: str, op: str):
-        """Rename and dispatch one instruction into SHQ or LDQ."""
+    def _accept(self, port: str, op: str, grp: InstrGroup = None):
+        """Rename and dispatch one instruction into SHQ or LDQ.
+
+        Uses arch register operands from InstrGroup when provided; falls back
+        to legacy auto-allocation (dependency-free) otherwise.
+        """
         age = self.age_counter
         self.age_counter += 1
 
         need_dst = HAS_DST[op]
         src_count = OP_SRC[op]
 
-        # Source phys regs — drawn from dedicated read-only pool (regs 30,31)
-        # that no dst ever writes to.  This models compiler-scheduled SIMD
-        # code where operands are ready before the instruction issues.
-        _SRC_REGS = [30, 31]
-        src_phys = []
-        for s in range(src_count):
-            arch_src = _SRC_REGS[s % len(_SRC_REGS)]
-            phys = self.rf.arch_map[arch_src]
-            src_phys.append(phys)
-            self.rf.add_reader(phys)
+        # Resolve arch register operands from InstrGroup
+        if grp is not None:
+            port_regs = {
+                'exq0': (grp.e0_dst, grp.e0_src),
+                'exq1': (grp.e1_dst, grp.e1_src),
+                'lnq':  (grp.ln_dst, grp.ln_src),
+                'ldq':  (grp.ld_dst, grp.ld_src),
+                'stq':  (grp.st_dst, grp.st_src),
+            }
+            arch_dst, arch_srcs = port_regs.get(port, (-1, ()))
+        else:
+            arch_dst, arch_srcs = -1, ()
 
-        # Destination phys reg — from per-op pool
+        # Source phys regs — from stimulus arch regs, or legacy safe pool
+        if arch_srcs:
+            src_phys = []
+            for a in arch_srcs:
+                phys = self.rf.arch_map[a]
+                src_phys.append(phys)
+                self.rf.add_reader(phys)
+        else:
+            # Legacy auto-allocation: always-ready sources (regs 30,31)
+            _SRC_REGS = [30, 31]
+            src_phys = []
+            for s in range(src_count):
+                phys = self.rf.arch_map[_SRC_REGS[s % len(_SRC_REGS)]]
+                src_phys.append(phys)
+                self.rf.add_reader(phys)
+
+        # Destination phys reg — from stimulus or per-op pool
         if need_dst:
-            arch_dst = _pick_arch_reg(op, age)
-            dst_phys, _ = self.rf.rename(arch_dst)
+            if arch_dst >= 0:
+                dst_phys, _ = self.rf.rename(arch_dst)
+            else:
+                dst_phys, _ = self.rf.rename(_pick_arch_reg(op, age))
         else:
             dst_phys = -1
 

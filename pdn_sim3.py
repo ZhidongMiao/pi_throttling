@@ -33,6 +33,69 @@ from controller import (
 )
 
 # ══════════════════════════════════════════════════════════════════════
+# Register Allocation Helpers
+# ══════════════════════════════════════════════════════════════════════
+class RegState:
+    """Arch register allocator for a single instruction stream.
+
+    Maintains separate working (dst) and constant (src) pools so that
+    independent instructions never create spurious RAW hazards: sources
+    come from a never-written constant pool, destinations rotate through
+    a working pool.
+
+    Pool layout (arch regs 0-31):
+      working pool:  base .. base+count-1  (written by this stream)
+      const pool:    const_base .. const_base+const_count-1  (never written)
+    """
+    def __init__(self, base=0, count=8, const_base=28, const_count=4):
+        self.base = base
+        self.count = count
+        self.const_base = const_base
+        self.const_count = const_count
+        self._next = base
+        self._next_const = const_base
+
+    def fresh_dst(self):
+        """Allocate a new dst register from the working pool."""
+        r = self._next
+        self._next = self.base + (self._next + 1 - self.base) % self.count
+        return r
+
+    def fresh_srcs(self, n):
+        """Allocate n source registers from the constant pool (always ready)."""
+        result = []
+        for _ in range(n):
+            result.append(self._next_const)
+            self._next_const = self.const_base + (self._next_const + 1 - self.const_base) % self.const_count
+        return tuple(result)
+
+
+class ChainRegState(RegState):
+    """Register allocator that creates RAW dependency chains.
+
+    src0 of each instruction is the dst of the previous instruction.
+    Remaining sources come from the constant pool.
+    """
+    def __init__(self, base=0, count=4, const_base=28, const_count=4):
+        super().__init__(base, count, const_base, const_count)
+        self._last_dst = -1
+
+    def chain_srcs_dst(self, n_src):
+        """Allocate (srcs, dst) for a chained instruction.
+
+        src0 = previous dst (or const if first instr), rest from const pool.
+        """
+        if self._last_dst >= 0:
+            src0 = self._last_dst
+        else:
+            src0 = self.fresh_srcs(1)[0]
+        rest = list(self.fresh_srcs(n_src - 1)) if n_src > 1 else []
+        dst = self.fresh_dst()
+        self._last_dst = dst
+        return (src0,) + tuple(rest), dst
+
+
+# ══════════════════════════════════════════════════════════════════════
 # Stimulus Generator (Task/Function Model)
 # ══════════════════════════════════════════════════════════════════════
 class StimulusGenerator:
@@ -72,22 +135,81 @@ class StimulusGenerator:
 
     # ── Primitive generators ──────────────────────────────────────────
     def _idle(self, n):    return [InstrGroup()] * n
-    def _mula2(self, n):   return [mg("mula", "mula")] * n
-    def _mal(self, n):     return [mg("mul", "add", lnq="ln")] * n
-    def _muladd(self, n):  return [mg("mul", "add")] * n
-    def _mula1(self, n):   return [mg("mula")] * n
-    def _mov(self, n):     return [mg("mov")] * n
+
+    def _mula2(self, n):
+        """EXQ0:MULA + EXQ1:MULA — independent streams, no RAW chains."""
+        rs0 = RegState(0, 8); rs1 = RegState(8, 8)
+        seq = []
+        for _ in range(n):
+            seq.append(mg("mula", "mula",
+                          e0_dst=rs0.fresh_dst(), e0_src=rs0.fresh_srcs(3),
+                          e1_dst=rs1.fresh_dst(), e1_src=rs1.fresh_srcs(3)))
+        return seq
+
+    def _mal(self, n):
+        """EXQ0:MUL + EXQ1:ADD + LNQ:LN — three independent streams."""
+        rs_mul = RegState(0, 8); rs_add = RegState(8, 4); rs_ln = RegState(12, 4)
+        seq = []
+        for _ in range(n):
+            seq.append(mg("mul", "add", lnq="ln",
+                          e0_dst=rs_mul.fresh_dst(), e0_src=rs_mul.fresh_srcs(2),
+                          e1_dst=rs_add.fresh_dst(), e1_src=rs_add.fresh_srcs(2),
+                          ln_dst=rs_ln.fresh_dst(),  ln_src=rs_ln.fresh_srcs(1)))
+        return seq
+
+    def _muladd(self, n):
+        """EXQ0:MUL + EXQ1:ADD — independent."""
+        rs_mul = RegState(0, 8); rs_add = RegState(8, 4)
+        seq = []
+        for _ in range(n):
+            seq.append(mg("mul", "add",
+                          e0_dst=rs_mul.fresh_dst(), e0_src=rs_mul.fresh_srcs(2),
+                          e1_dst=rs_add.fresh_dst(), e1_src=rs_add.fresh_srcs(2)))
+        return seq
+
+    def _mula1(self, n):
+        """EXQ0:MULA — independent."""
+        rs = RegState(0, 8)
+        seq = []
+        for _ in range(n):
+            seq.append(mg("mula", e0_dst=rs.fresh_dst(), e0_src=rs.fresh_srcs(3)))
+        return seq
+
+    def _mov(self, n):
+        """EXQ0:MOV — independent."""
+        rs = RegState(24, 2)
+        seq = []
+        for _ in range(n):
+            seq.append(mg("mov", e0_dst=rs.fresh_dst(), e0_src=rs.fresh_srcs(1)))
+        return seq
 
     def _rand_mixed(self, n: int) -> List[InstrGroup]:
+        rs_mula2_0 = RegState(0, 8); rs_mula2_1 = RegState(8, 8)
+        rs_mal_mul = RegState(0, 8); rs_mal_add = RegState(8, 4); rs_mal_ln = RegState(12, 4)
+        rs_mula1 = RegState(16, 4)
+        rs_muladd_mul = RegState(0, 8); rs_muladd_add = RegState(8, 4)
+        rs_ln = RegState(20, 2)
+        rs_mov = RegState(24, 2)
+        rs_ld = RegState(22, 2)
         opts = [
-            (lambda: mg("mula", "mula"), 0.20),
-            (lambda: mg("mul", "add", lnq="ln"), 0.15),
-            (lambda: mg("mula"), 0.10),
-            (lambda: mg(ldq="ld"), 0.08),
-            (lambda: mg("mula", "mula", ldq="ld"), 0.10),
-            (lambda: mg("mul", "add"), 0.12),
-            (lambda: mg(lnq="ln"), 0.08),
-            (lambda: mg("mov"), 0.05),
+            (lambda: mg("mula", "mula",
+                        e0_dst=rs_mula2_0.fresh_dst(), e0_src=rs_mula2_0.fresh_srcs(3),
+                        e1_dst=rs_mula2_1.fresh_dst(), e1_src=rs_mula2_1.fresh_srcs(3)), 0.20),
+            (lambda: mg("mul", "add", lnq="ln",
+                        e0_dst=rs_mal_mul.fresh_dst(), e0_src=rs_mal_mul.fresh_srcs(2),
+                        e1_dst=rs_mal_add.fresh_dst(), e1_src=rs_mal_add.fresh_srcs(2),
+                        ln_dst=rs_mal_ln.fresh_dst(),  ln_src=rs_mal_ln.fresh_srcs(1)), 0.15),
+            (lambda: mg("mula", e0_dst=rs_mula1.fresh_dst(), e0_src=rs_mula1.fresh_srcs(3)), 0.10),
+            (lambda: mg(ldq="ld", ld_dst=rs_ld.fresh_dst()), 0.08),
+            (lambda: mg("mula", "mula", ldq="ld",
+                        e0_dst=rs_mula2_0.fresh_dst(), e0_src=rs_mula2_0.fresh_srcs(3),
+                        e1_dst=rs_mula2_1.fresh_dst(), e1_src=rs_mula2_1.fresh_srcs(3),
+                        ld_dst=rs_ld.fresh_dst()), 0.10),
+            (lambda: mg("mul", "add",
+                        e0_dst=rs_muladd_mul.fresh_dst(), e0_src=rs_muladd_mul.fresh_srcs(2),
+                        e1_dst=rs_muladd_add.fresh_dst(), e1_src=rs_muladd_add.fresh_srcs(2)), 0.12),
+            (lambda: mg(lnq="ln", ln_dst=rs_ln.fresh_dst(), ln_src=rs_ln.fresh_srcs(1)), 0.08),
+            (lambda: mg("mov", e0_dst=rs_mov.fresh_dst(), e0_src=rs_mov.fresh_srcs(1)), 0.05),
             (lambda: InstrGroup(), 0.12),
         ]
         pats = [o[0] for o in opts]; wts = [o[1] for o in opts]
@@ -98,19 +220,29 @@ class StimulusGenerator:
         return seq[:n]
 
     def _ld_burst(self, n: int) -> List[InstrGroup]:
-        """LD-EX kernel: LD window → MULA×2 burst, repeating."""
+        """LD-EX kernel: LD→idle×9→MULA×2×8. LD dst feeds MULA src0 (RAW)."""
+        rs_mula0 = RegState(0, 8); rs_mula1 = RegState(8, 8)
         seq = []; i = 0
         while i < n:
-            seq.append(mg(ldq="ld")); i += 1
+            ld_dst = RegState(16, 2).fresh_dst()
+            seq.append(mg(ldq="ld", ld_dst=ld_dst)); i += 1
             for _ in range(min(9, n - i)): seq.append(InstrGroup()); i += 1
-            for _ in range(min(8, n - i)): seq.append(mg("mula", "mula")); i += 1
+            for _ in range(min(8, n - i)):
+                # First MULA in burst reads LD dst → RAW from LD to compute
+                s0 = (ld_dst,) + rs_mula0.fresh_srcs(2)
+                seq.append(mg("mula", "mula",
+                              e0_dst=rs_mula0.fresh_dst(), e0_src=s0,
+                              e1_dst=rs_mula1.fresh_dst(), e1_src=rs_mula1.fresh_srcs(3)))
+                i += 1
         return seq[:n]
 
     def _serial_mula(self, n: int) -> List[InstrGroup]:
-        """Serial MULA dependency chain: one MULA every 5 cycles."""
+        """Serial MULA chain: each MULA reads previous MULA's dst (RAW chain)."""
+        rs = ChainRegState(0, 4)
         seq = []; i = 0
         while i < n:
-            seq.append(mg("mula")); i += 1
+            srcs, dst = rs.chain_srcs_dst(3)
+            seq.append(mg("mula", e0_dst=dst, e0_src=srcs)); i += 1
             for _ in range(min(4, n - i)): seq.append(InstrGroup()); i += 1
         return seq[:n]
 
