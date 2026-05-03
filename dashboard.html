@@ -168,37 +168,38 @@ canvas{display:block;width:100%!important}
 #cv-tok   { height:140px !important; }
 #cv-state { height:140px !important; }
 #cv-calib { height:140px !important; }
-/* ── Verdi-style instruction timeline ── */
-.itim-verdi { display:flex; margin:-4px -10px 0 -10px; user-select:none; }
+/* ── Verdi-style instruction timeline v2 ── */
+.itim-verdi { display:flex; margin:0 -4px; user-select:none; }
 .itim-labels {
-  flex-shrink:0; width:72px; padding-top:17px;
-  display:flex; flex-direction:column; gap:3px;
+  flex-shrink:0; width:44px; padding-top:18px;
+  display:flex; flex-direction:column;
   border-right:1px solid var(--border); background:var(--bg1);
   position:relative; z-index:2;
 }
 .itim-label {
-  font-family:var(--mono); font-size:8px; letter-spacing:.04em;
-  color:var(--dim); height:26px; line-height:26px; padding:0 6px;
-  text-align:right; white-space:nowrap;
+  font-family:var(--mono); font-size:7px; letter-spacing:.04em;
+  color:var(--dim); padding:0 4px; text-align:right; white-space:nowrap;
+  display:flex; align-items:center; justify-content:flex-end;
 }
-.itim-label.tok-lbl { color:var(--a3); }
-.itim-label.q-lbl   { color:var(--a2); }
+.itim-label.q-exq0  { color:#ff6d2e; }
+.itim-label.q-exq1  { color:#ffd740; }
+.itim-label.q-lnq   { color:#e040fb; }
+.itim-label.q-ldq   { color:#00e5ff; }
+.itim-label.q-stq   { color:#80cbc4; }
+.itim-label.q-tok   { color:var(--a3); }
 .itim-right { flex:1; overflow:hidden; display:flex; flex-direction:column; }
-.itim-axis-wrap { overflow:hidden; height:17px; flex-shrink:0; }
-.itim-axis-wrap canvas { display:block; }
-.itim-wave-wrap { overflow:auto; flex:1; }
+.itim-wave-wrap { overflow:auto; flex:1; position:relative; cursor:crosshair; }
 .itim-wave-wrap::-webkit-scrollbar { height:6px; width:4px; }
 .itim-wave-wrap::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
 .itim-wave-wrap::-webkit-scrollbar-track { background:transparent; }
-#cv-itimeline { display:block; }
-#cv-itim-axis   { display:block; }
-.zoom-grp{display:flex;gap:2px;margin-left:12px}
-.zoom-btn{font-family:var(--mono);font-size:14px;padding:0 6px;border-radius:1px;
+.itim-wave-wrap.grabbing { cursor:grabbing; }
+#itim-spacer { pointer-events:none; }
+#cv-itimeline { display:block; position:sticky; left:0; z-index:1; }
+.zoom-grp{display:flex;gap:2px;margin-left:12px;align-items:center}
+.zoom-btn{font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:1px;
   background:rgba(255,255,255,.04);border:1px solid var(--border);color:var(--dim);
-  cursor:pointer;line-height:1.4}
+  cursor:pointer;line-height:1.2}
 .zoom-btn:hover{background:rgba(255,255,255,.1);color:#fff;border-color:var(--accent)}
-.itim-grab { cursor: grab; }
-.itim-grabbing { cursor: grabbing; }
 
 /* ── legend ── */
 .leg{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
@@ -266,7 +267,7 @@ canvas{display:block;width:100%!important}
   <div class="err-body">
     未找到 <code>sim_results.json</code>。<br>
     请先在同一目录下运行仿真引擎生成数据文件：
-    <div class="err-cmd">python3 run_sim.py --cycles 700</div>
+    <div class="err-cmd">python3 run_sim.py --cycles 2000</div>
     然后用本地 HTTP Server 打开 dashboard：<br>
     <div class="err-cmd">python3 -m http.server 8080</div>
     再访问 <code>http://localhost:8080/dashboard.html</code>
@@ -376,7 +377,7 @@ canvas{display:block;width:100%!important}
           </div>
         </div>
 
-        <!-- row4: instruction timeline (Verdi-style per-queue) -->
+        <!-- row4: Verdi-style instruction timeline -->
         <div class="chart-row">
           <div class="panel p-accent">
             <div class="panel-hdr">
@@ -385,19 +386,26 @@ canvas{display:block;width:100%!important}
               <div class="panel-tags">
                 <span class="ptag" id="tag-itim-ideal">—</span>
                 <span class="ptag" id="tag-itim-actual">—</span>
+                <span class="ptag" id="tag-itim-cursor" style="color:var(--accent)">T=—</span>
               </div>
               <div class="zoom-grp" id="itim-zoom">
-                <span class="ptag" id="tag-zoom-lvl">2 px/cy</span>
-                <button class="zoom-btn" id="btn-zoom-reset" title="Reset zoom">↺</button>
+                <button class="zoom-btn" id="btn-zoom-out" title="Zoom out (or wheel)">−</button>
+                <span class="ptag" id="tag-zoom-lvl">4 px/cy</span>
+                <button class="zoom-btn" id="btn-zoom-in" title="Zoom in (or wheel)">+</button>
+                <button class="zoom-btn" id="btn-zoom-fit" title="Fit to width">⊡</button>
+                <button class="zoom-btn" id="btn-zoom-reset" title="Reset zoom & pan">↺</button>
               </div>
             </div>
             <div class="itim-verdi" id="itim-verdi">
               <div class="itim-labels" id="itim-labels"></div>
               <div class="itim-right">
-                <div class="itim-axis-wrap" id="itim-axis-wrap"><canvas id="cv-itim-axis"></canvas></div>
-                <div class="itim-wave-wrap" id="itim-wave-wrap"><canvas id="cv-itimeline"></canvas></div>
+                <div class="itim-wave-wrap" id="itim-wave-wrap">
+                  <div id="itim-spacer"></div>
+                  <canvas id="cv-itimeline"></canvas>
+                </div>
               </div>
             </div>
+            <div class="leg" id="leg-itim"></div>
           </div>
         </div>
 
@@ -791,305 +799,440 @@ function buildTable() {
 }
 
 // ══════════════════════════════════════════════════════════════════
-//  VERDI-STYLE INSTRUCTION TIMELINE
+//  VERDI-STYLE INSTRUCTION TIMELINE  v3 (viewport rendering)
 // ══════════════════════════════════════════════════════════════════
-let ITIM_ZOOM = 2;      // px per cycle
-let ITIM_PAN_X = 0;
-let ITIM_DRAG = false;
-let ITIM_DRAG_X0 = 0;
-let ITIM_PAN_X0 = 0;
-let ITIM_N = 0;           // total cycles for current BM
 
-const QCOLORS = {
+// ── State ──
+const ITIM = {
+  zoom: 4,           // px per cycle (1–100)
+  panX: 0,
+  N: 0,
+  dpr: 1,
+  cursorCy: -1,
+  drag: false,
+  dragX0: 0,
+  panX0: 0,
+};
+let _itimRaf = null;
+let _occCache = null;  // { bmId: { qid: { insts, maxSlots } } }
+
+// ── Op colours ──
+const QC = {
   mula: "#ff6d2e", mul: "#ffd740", add: "#ffd740",
   ln:   "#e040fb", exp: "#e040fb", mov: "#4dffb0",
-  ld:   "#00e5ff", nop: "#1a2a40",
-  "":   "#0d1520"
+  ld:   "#00e5ff", st:  "#80cbc4",
+  "":   "#0d1520",
 };
-function qClr(t) { return QCOLORS[t] || "#546e7a"; }
+function _qClr(op) { return QC[op] || "#546e7a"; }
+function _qClrA(op, a) {
+  const h = QC[op] || "#546e7a";
+  return `rgba(${parseInt(h.slice(1,3),16)},${parseInt(h.slice(3,5),16)},${parseInt(h.slice(5,7),16)},${a})`;
+}
 
-function _decodeRle(rle) {
+function _rleDec(rle) {
   const out = [];
   if (!rle) return out;
-  for (const [t, n] of rle) {
-    for (let i = 0; i < n; i++) out.push(t);
-  }
+  for (const [t, n] of rle) { for (let i = 0; i < n; i++) out.push(t || ""); }
   return out;
 }
 
+// ── Pipeline occupancy (cached) ──
+function _pipeOcc(decoded, depthMap) {
+  const insts = [];
+  const slotFree = [];
+  for (let cy = 0; cy < decoded.length; cy++) {
+    const op = decoded[cy];
+    if (!op) continue;
+    const d = depthMap[op] || 1;
+    const end = cy + d - 1;
+    let s = 0;
+    while (s < slotFree.length && slotFree[s] >= cy) s++;
+    if (s === slotFree.length) slotFree.push(end);
+    else slotFree[s] = end;
+    insts.push({ op, start: cy, end, slot: s });
+  }
+  return { insts, maxSlots: slotFree.length };
+}
+
+function _getOccCache(bmId, queues, PD) {
+  if (_occCache && _occCache.bmId === bmId) return _occCache;
+  const occs = {};
+  for (const q of queues) occs[q.id] = _pipeOcc(q.data, PD);
+  _occCache = { bmId, occs };
+  return _occCache;
+}
+
+// ── Token heat ──
+function _tokHeat(v, maxV) {
+  if (v <= 0) return "#0c1520";
+  const i = Math.min(v / Math.max(maxV, 1), 1);
+  return `rgb(${Math.round(40+215*i)},${Math.round(20+80*i)},${Math.round(20+60*i)})`;
+}
+
+function _itimScheduleRender() {
+  if (_itimRaf) return;
+  _itimRaf = requestAnimationFrame(() => { _itimRaf = null; buildInstrTimeline(); });
+}
+
+// ── Layout constants ──
+const AXIS_H = 18, QLANE_H = 30, TOKLANE_H = 22, GAP = 1;
+
+// ── Main render (viewport-based) ────────────────────────────────
 function buildInstrTimeline() {
   const bm = SIM.data[CUR_BM];
   if (!bm || !bm.iq_exq0) return;
-  const off = bm.off;
-  const on  = bm.on;
+  const PD = SIM.meta.pipe_depth || {};
+  ITIM.dpr = window.devicePixelRatio || 1;
 
-  // Decode per-queue RLE
-  const qexq0 = _decodeRle(bm.iq_exq0);
-  const qexq1 = _decodeRle(bm.iq_exq1);
-  const qlnq  = _decodeRle(bm.iq_lnq);
-  const qldq  = _decodeRle(bm.iq_ldq);
+  // ── Data ──────────────────────────────────────────────────────
+  const qexq0 = _rleDec(bm.iq_exq0);
+  const qexq1 = _rleDec(bm.iq_exq1);
+  const qlnq  = _rleDec(bm.iq_lnq);
+  const qldq  = _rleDec(bm.iq_ldq);
+  const qstq  = _rleDec(bm.iq_stq);
   const N = qexq0.length;
-  ITIM_N = N;
-  const pw = ITIM_ZOOM;
-  const contentW = N * pw;
+  ITIM.N = N;
+  const pw = ITIM.zoom, dpr = ITIM.dpr;
 
-  // Color map for instruction mnemonics
-  function heat(v, maxV) {
-    const i = Math.min(v / Math.max(maxV, 1), 1);
-    return `rgb(${Math.round(40+215*i)},${Math.round(20+80*i)},${Math.round(20+60*i)})`;
-  }
-  const maxOff = Math.max(...off.token_actual, 1);
-  const maxOn  = Math.max(...on.token_actual, 1);
-  const maxTok = Math.max(maxOff, maxOn);
-
-  // ── Lane labels (left column, HTML) ──
-  const lanes = [
-    { id: "tok_base",  cls: "tok-lbl", text: "Base Tok",    },
-    { id: "q_exq0",    cls: "q-lbl",   text: "EXQ0",        },
-    { id: "q_exq1",    cls: "q-lbl",   text: "EXQ1",        },
-    { id: "q_lnq",     cls: "q-lbl",   text: "LNQ",         },
-    { id: "q_ldq",     cls: "q-lbl",   text: "LDQ",         },
-    { id: "tok_throt", cls: "tok-lbl", text: "Throt Tok",   },
+  const queues = [
+    { id:"exq0", data:qexq0, label:"EXQ0", css:"q-exq0" },
+    { id:"exq1", data:qexq1, label:"EXQ1", css:"q-exq1" },
+    { id:"lnq",  data:qlnq,  label:"LNQ",  css:"q-lnq"  },
+    { id:"ldq",  data:qldq,  label:"LDQ",  css:"q-ldq"  },
+    { id:"stq",  data:qstq,  label:"STQ",  css:"q-stq"  },
   ];
-  document.getElementById("itim-labels").innerHTML = lanes.map(l =>
-    `<div class="itim-label ${l.cls}">${l.text}</div>`
-  ).join("");
 
-  // ── Waveform canvas ──
-  const rowH = 26, gap = 3;
-  const totalH = lanes.length * (rowH + gap) - gap;
+  // ── Pipeline occupancy (cached) ────────────────────────────────
+  const cache = _getOccCache(CUR_BM, queues, PD);
+  const occs = cache.occs;
+  let globalMaxSlots = 1;
+  for (const q of queues) {
+    if (occs[q.id].maxSlots > globalMaxSlots) globalMaxSlots = occs[q.id].maxSlots;
+  }
+  const slotH = Math.max(3, Math.min(7, Math.floor((QLANE_H - 4) / Math.max(1, globalMaxSlots))));
+
+  // ── Layout ────────────────────────────────────────────────────
+  let y = 0; const axisY = y; y += AXIS_H;
+  for (const q of queues) { q._y = y; y += QLANE_H + GAP; }
+  const tokY = y; y += TOKLANE_H; const totalH = y;
+  const contentW = Math.max(N * pw, 400);
+
+  // ── Viewport ──────────────────────────────────────────────────
+  const waveWrap = document.getElementById("itim-wave-wrap");
+  const viewW = waveWrap.clientWidth || 800;
+  const scrollX = waveWrap.scrollLeft;
+  function sx(cy) { return cy * pw - scrollX; }
+
+  // ── Spacer ────────────────────────────────────────────────────
+  const spacer = document.getElementById("itim-spacer");
+  spacer.style.width = contentW + "px";
+  spacer.style.height = totalH + "px";
+
+  // ── Canvas (viewport-sized, HiDPI) ────────────────────────────
   const canvas = document.getElementById("cv-itimeline");
-  canvas.width  = contentW;
-  canvas.height = totalH;
-  canvas.style.width  = contentW + "px";
+  canvas.width  = viewW * dpr;
+  canvas.height = totalH * dpr;
+  canvas.style.width  = viewW + "px";
   canvas.style.height = totalH + "px";
   const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  ctx.fillStyle = "#0a1018";
-  ctx.fillRect(0, 0, contentW, totalH);
+  // ── Background ────────────────────────────────────────────────
+  ctx.fillStyle = "#080e16"; ctx.fillRect(0, 0, viewW, totalH);
 
-  // Draw each lane
-  lanes.forEach((lane, idx) => {
-    const y = idx * (rowH + gap);
+  // ── Visible range ─────────────────────────────────────────────
+  const cy0 = Math.max(0, Math.floor(scrollX / pw) - 2);
+  const cy1 = Math.min(N - 1, Math.ceil((scrollX + viewW) / pw) + 2);
 
-    // Vertical grid lines
-    const gridStep = pw >= 20 ? 10 : pw >= 10 ? 20 : pw >= 5 ? 50 : 100;
-    for (let cy = 0; cy < N; cy += gridStep) {
-      if (cy === 0) continue;
-      const gx = cy * pw;
-      ctx.strokeStyle = "rgba(255,255,255,0.04)";
-      ctx.beginPath(); ctx.moveTo(gx, y); ctx.lineTo(gx, y + rowH); ctx.stroke();
-    }
-
-    if (idx === 0 || idx === 5) {
-      // ── Token lanes: heatmap bar ──
-      const arr = idx === 0 ? off.token_actual : on.token_actual;
-      for (let i = 0; i < N; i++) {
-        ctx.fillStyle = heat(arr[i], maxTok);
-        ctx.fillRect(i * pw, y, Math.max(pw, 1), rowH);
-      }
-      // Stall markers on throttled lane
-      if (idx === 5) {
-        for (let i = 0; i < N; i++) {
-          if (on.token_actual[i] < off.token_actual[i]) {
-            const sx = i * pw + pw/2;
-            ctx.fillStyle = "#ff3d57";
-            ctx.fillRect(sx - 0.5, y + 1, 1, rowH - 2);
-          }
-        }
-      }
-      // Token numbers when zoomed
-      if (pw >= 8) {
-        ctx.font = "8px 'IBM Plex Mono', monospace";
-        ctx.textAlign = "center";
-        for (let i = 0; i < N; i++) {
-          const tv = arr[i];
-          if (tv > 0) ctx.fillStyle = "rgba(255,255,255,0.7)";
-          else        ctx.fillStyle = "rgba(255,255,255,0.12)";
-          ctx.fillText(tv || "·", i * pw + pw/2, y + rowH - 6);
-        }
-        ctx.textAlign = "start";
-      }
-    } else {
-      // ── Queue lanes: colored blocks with instruction text ──
-      let arr;
-      if      (idx === 1) arr = qexq0;
-      else if (idx === 2) arr = qexq1;
-      else if (idx === 3) arr = qlnq;
-      else if (idx === 4) arr = qldq;
-
-      for (let i = 0; i < N; i++) {
-        const t = arr[i] || "";
-        ctx.fillStyle = qClr(t);
-        ctx.fillRect(i * pw, y, Math.max(pw, 1), rowH);
-      }
-      // Idle overlay pattern
-      if (pw >= 5) {
-        for (let i = 0; i < N; i++) {
-          if (!arr[i]) {
-            ctx.fillStyle = "rgba(0,0,0,0.45)";
-            ctx.fillRect(i * pw, y, pw, rowH);
-          }
-        }
-      }
-      // Instruction label when zoomed
-      if (pw >= 10) {
-        ctx.font = "7px 'IBM Plex Mono', monospace";
-        ctx.textAlign = "center";
-        for (let i = 0; i < N; i++) {
-          const t = arr[i];
-          if (t) {
-            ctx.fillStyle = "#fff";
-            ctx.fillText(t.toUpperCase(), i * pw + pw/2, y + rowH - 8);
-          }
-        }
-        ctx.textAlign = "start";
-      }
-    }
-  });
-
-  // ── Cycle axis (separate canvas, synced with wave scroll) ──
-  const axisCanvas = document.getElementById("cv-itim-axis");
-  axisCanvas.width  = contentW;
-  axisCanvas.height = 17;
-  axisCanvas.style.width  = contentW + "px";
-  axisCanvas.style.height = "17px";
-  const actx = axisCanvas.getContext("2d");
-  actx.fillStyle = "#0c1220";
-  actx.fillRect(0, 0, contentW, 17);
-
-  const aGridStep = pw >= 20 ? 10 : pw >= 10 ? 20 : pw >= 5 ? 50 : 100;
-  actx.fillStyle = "rgba(255,255,255,0.4)";
-  actx.font = "8px 'IBM Plex Mono', monospace";
-  actx.textAlign = "center";
-  for (let cy = 0; cy < N; cy += aGridStep) {
-    const ax = cy * pw;
-    if (cy > 0) {
-      actx.strokeStyle = "rgba(255,255,255,0.08)";
-      actx.beginPath(); actx.moveTo(ax, 0); actx.lineTo(ax, 17); actx.stroke();
-    }
-    if (pw >= 4 || cy % 100 === 0) actx.fillText(cy, ax, 12);
-  }
-  actx.textAlign = "start";
-
-  // Sync axis scroll with wave scroll
-  const axisWrap = document.getElementById("itim-axis-wrap");
-  const waveWrap = document.getElementById("itim-wave-wrap");
-  if (axisWrap && waveWrap) {
-    axisWrap.scrollLeft = waveWrap.scrollLeft;
+  // ── Grid ──────────────────────────────────────────────────────
+  const gridStep = pw >= 20 ? 10 : pw >= 10 ? 20 : pw >= 5 ? 50 : pw >= 2 ? 100 : 200;
+  const gs = Math.ceil(cy0 / gridStep) * gridStep;
+  ctx.strokeStyle = "rgba(255,255,255,0.03)"; ctx.lineWidth = 1;
+  for (let cy = gs; cy <= cy1; cy += gridStep) {
+    if (cy === 0) continue;
+    const gx = Math.floor(sx(cy)) + 0.5;
+    if (gx < 0 || gx > viewW) continue;
+    ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, totalH); ctx.stroke();
   }
 
-  // Update tags
-  const offSum = off.token_actual.reduce((a,b)=>a+b,0);
-  const onSum  = on.token_actual.reduce((a,b)=>a+b,0);
-  document.getElementById("tag-itim-ideal").textContent = `Base ${offSum} tok`;
-  document.getElementById("tag-itim-actual").textContent = `Throt ${onSum} tok`;
-  document.getElementById("tag-zoom-lvl").textContent = `${ITIM_ZOOM} px/cy`;
+  // ── Axis ──────────────────────────────────────────────────────
+  ctx.fillStyle = "#0c1220"; ctx.fillRect(0, axisY, viewW, AXIS_H);
+  ctx.strokeStyle = "rgba(255,255,255,0.10)";
+  ctx.beginPath(); ctx.moveTo(0, axisY+AXIS_H); ctx.lineTo(viewW, axisY+AXIS_H); ctx.stroke();
+
+  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  ctx.font = "9px 'IBM Plex Mono', monospace"; ctx.textAlign = "center";
+  for (let cy = gs; cy <= cy1; cy += gridStep) {
+    const ax = sx(cy);
+    if (ax < 0 || ax > viewW) continue;
+    ctx.fillText(cy, ax, axisY + 12);
+  }
+  ctx.textAlign = "start";
+
+  // ── Queue lanes ───────────────────────────────────────────────
+  const off = bm.off, on = bm.on;
+  const maxTok = Math.max(arrMax(off.token_actual), arrMax(on.token_actual));
+
+  for (const q of queues) {
+    const qy = q._y, occ = occs[q.id];
+
+    // Lane bg
+    ctx.fillStyle = "#0c1220"; ctx.fillRect(0, qy, viewW, QLANE_H);
+
+    // Row stripes (visible portion only)
+    for (let row = 0; row < Math.max(1, occ.maxSlots); row++) {
+      if (row % 2 === 0) {
+        ctx.fillStyle = "rgba(255,255,255,0.015)";
+        ctx.fillRect(0, qy + 2 + row * slotH, viewW, slotH);
+      }
+    }
+
+    // Pipeline-depth blocks (visibility-clipped)
+    for (const inst of occ.insts) {
+      const bx0 = sx(inst.start);
+      const bx1 = sx(inst.end + 1);
+      if (bx1 < 0 || bx0 > viewW) continue;
+
+      const drawX = Math.max(-0.5, bx0);
+      const drawW = Math.min(viewW + 0.5, bx1) - drawX;
+      if (drawW <= 0) continue;
+
+      const iy = qy + 2 + inst.slot * slotH;
+      const ih = Math.max(1, slotH - 1);
+      const alpha = 0.45 + 0.55 * (1 - inst.slot / Math.max(1, occ.maxSlots));
+      ctx.fillStyle = _qClrA(inst.op, alpha);
+      ctx.fillRect(drawX, iy, drawW, ih);
+
+      // Op label at block centre (only if centre is visible)
+      if (pw >= 8 && drawW > 20) {
+        const labelX = bx0 + (bx1 - bx0) / 2;
+        if (labelX > 0 && labelX < viewW) {
+          ctx.fillStyle = "rgba(255,255,255,0.85)";
+          ctx.font = `${Math.max(6, Math.min(8, pw*0.9))}px 'IBM Plex Mono', monospace`;
+          ctx.textAlign = "center";
+          ctx.fillText(inst.op.toUpperCase(), labelX, iy + ih - 1);
+          ctx.textAlign = "start";
+        }
+      }
+
+      // Stage ticks
+      if (pw >= 15 && inst.end > inst.start) {
+        ctx.strokeStyle = "rgba(255,255,255,0.12)"; ctx.lineWidth = 0.5;
+        for (let s = inst.start + 1; s <= inst.end; s++) {
+          const tickX = sx(s);
+          if (tickX < 0 || tickX > viewW) continue;
+          ctx.beginPath(); ctx.moveTo(tickX, iy); ctx.lineTo(tickX, iy + ih); ctx.stroke();
+        }
+      }
+    }
+
+    // Lane label
+    ctx.fillStyle = "rgba(0,0,0,0.75)"; ctx.fillRect(0, qy, 32, QLANE_H);
+    ctx.fillStyle = _qClr(q.id==="exq0"?"mula":q.id==="exq1"?"mul":q.id==="lnq"?"ln":q.id==="ldq"?"ld":"st");
+    ctx.font = "bold 8px 'IBM Plex Mono', monospace"; ctx.textAlign = "center";
+    ctx.fillText(q.label, 16, qy + QLANE_H/2 + 3); ctx.textAlign = "start";
+
+    // Bottom border
+    ctx.strokeStyle = "rgba(255,255,255,0.06)";
+    ctx.beginPath(); ctx.moveTo(0, qy+QLANE_H); ctx.lineTo(viewW, qy+QLANE_H); ctx.stroke();
+  }
+
+  // ── Token lane (visible range only) ───────────────────────────
+  const hH = Math.floor(TOKLANE_H / 2);
+  ctx.fillStyle = "#0c1220"; ctx.fillRect(0, tokY, viewW, TOKLANE_H);
+  for (let i = cy0; i <= cy1; i++) {
+    const x = sx(i), w = Math.max(pw, 1);
+    if (x + w < 0 || x > viewW) continue;
+    ctx.fillStyle = _tokHeat(off.token_actual[i], maxTok);
+    ctx.fillRect(x, tokY, w, hH);
+    ctx.fillStyle = _tokHeat(on.token_actual[i], maxTok);
+    ctx.fillRect(x, tokY + hH, w, TOKLANE_H - hH);
+  }
+
+  // Credit line (visible range only)
+  if (pw >= 2 && on.credit) {
+    ctx.strokeStyle = C.credit; ctx.lineWidth = 1;
+    ctx.beginPath();
+    let first = true;
+    for (let i = Math.max(0, cy0 - 1); i <= cy1; i++) {
+      const cr = on.credit[i];
+      const x = sx(i);
+      const cy = tokY + hH + (TOKLANE_H - hH) * (1 - cr / 3);
+      if (first) { ctx.moveTo(x, cy); first = false; }
+      else { ctx.lineTo(x, cy); }
+    }
+    ctx.stroke();
+  }
+
+  // Token lane label
+  ctx.fillStyle = "rgba(0,0,0,0.75)"; ctx.fillRect(0, tokY, 32, TOKLANE_H);
+  ctx.fillStyle = C.tok_act; ctx.font = "bold 8px 'IBM Plex Mono', monospace"; ctx.textAlign = "center";
+  ctx.fillText("TOK", 16, tokY + TOKLANE_H/2 + 3); ctx.textAlign = "start";
+
+  // ── Cursor ────────────────────────────────────────────────────
+  if (ITIM.cursorCy >= 0 && ITIM.cursorCy < N) {
+    const cx = sx(ITIM.cursorCy) + pw/2;
+    if (cx >= 0 && cx <= viewW) {
+      ctx.strokeStyle = "rgba(255,255,255,0.55)"; ctx.lineWidth = 1;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, totalH); ctx.stroke();
+      ctx.setLineDash([]);
+
+      const clW = 70, clH = 16;
+      const clX = Math.max(0, Math.min(viewW - clW, cx - clW/2));
+      ctx.fillStyle = "rgba(0,0,0,0.85)"; ctx.fillRect(clX, 0, clW, clH);
+      ctx.fillStyle = "#fff"; ctx.font = "bold 10px 'IBM Plex Mono', monospace"; ctx.textAlign = "center";
+      ctx.fillText("T=" + ITIM.cursorCy, clX + clW/2, clH - 4); ctx.textAlign = "start";
+    }
+  }
+
+  // ── Labels (left HTML) ────────────────────────────────────────
+  const labelEl = document.getElementById("itim-labels");
+  if (!labelEl.dataset.built) {
+    let lbl = '<div class="itim-label" style="height:'+AXIS_H+'px;line-height:'+AXIS_H+'px">cy</div>';
+    for (const q of queues) {
+      lbl += `<div class="itim-label ${q.css}" style="height:${QLANE_H}px;line-height:${QLANE_H}px">${q.label}</div>`;
+      lbl += `<div style="height:${GAP}px"></div>`;
+    }
+    lbl += `<div class="itim-label q-tok" style="height:${TOKLANE_H}px;line-height:${TOKLANE_H}px">TOK</div>`;
+    labelEl.innerHTML = lbl;
+    labelEl.dataset.built = "1";
+  }
+
+  // ── Tags ──────────────────────────────────────────────────────
+  document.getElementById("tag-itim-ideal").textContent =
+    `Base ${off.token_actual.reduce((a,b)=>a+b,0)} tok`;
+  document.getElementById("tag-itim-actual").textContent =
+    `Throt ${on.token_actual.reduce((a,b)=>a+b,0)} tok`;
+  document.getElementById("tag-zoom-lvl").textContent = `${ITIM.zoom} px/cy`;
+
+  const curEl = document.getElementById("tag-itim-cursor");
+  if (ITIM.cursorCy >= 0 && ITIM.cursorCy < N) {
+    const vOn = on.voltage_mv[ITIM.cursorCy];
+    const st = SIM.meta.state_names[on.fsm_state[ITIM.cursorCy]];
+    const cr = on.credit ? on.credit[ITIM.cursorCy] : "-";
+    const ops = [qexq0[ITIM.cursorCy], qexq1[ITIM.cursorCy], qlnq[ITIM.cursorCy],
+                 qldq[ITIM.cursorCy], qstq[ITIM.cursorCy]].filter(Boolean).join(",") || "idle";
+    curEl.textContent = `T=${ITIM.cursorCy} V=${vOn?.toFixed(0)}mV tok=${on.token_actual[ITIM.cursorCy]} cr=${cr} ${st} [${ops}]`;
+  } else {
+    curEl.textContent = "T=—";
+  }
+
+  // ── Legend (once) ─────────────────────────────────────────────
+  const legEl = document.getElementById("leg-itim");
+  if (!legEl.dataset.built) {
+    legEl.innerHTML = [
+      { op:"MULA", c:QC.mula, d:PD.mula }, { op:"MUL", c:QC.mul, d:PD.mul },
+      { op:"ADD", c:QC.add, d:PD.add },    { op:"LN",  c:QC.ln,  d:PD.ln },
+      { op:"EXP", c:QC.exp, d:PD.exp },    { op:"MOV", c:QC.mov, d:PD.mov },
+      { op:"LD",  c:QC.ld,  d:PD.ld },     { op:"ST",  c:QC.st,  d:PD.st },
+    ].map(x => `<div class="leg-item"><div class="leg-dot" style="background:${x.c}"></div>${x.op}<span style="color:var(--dim);margin-left:2px">d=${x.d}</span></div>`).join("");
+    legEl.dataset.built = "1";
+  }
 }
 
+// ── Helpers ─────────────────────────────────────────────────────
 function _itimTotalCycles() {
-  if (ITIM_N > 0) return ITIM_N;
-  const bm = SIM && SIM.data[CUR_BM];
+  if (ITIM.N > 0) return ITIM.N;
+  const bm = SIM && SIM.data && SIM.data[CUR_BM];
   if (!bm || !bm.iq_exq0) return 0;
-  return bm.iq_exq0.reduce((s,e) => s + e[1], 0);
+  return bm.iq_exq0.reduce((s, e) => s + e[1], 0);
 }
 
 function itimZoom(factor, cx) {
   if (!SIM) return;
-  const N = _itimTotalCycles();
-  if (!N) return;
-  const oldPw = ITIM_ZOOM;
-
-  ITIM_ZOOM = Math.round(ITIM_ZOOM * factor);
-  ITIM_ZOOM = Math.max(1, Math.min(50, ITIM_ZOOM));
-
+  const N = _itimTotalCycles(); if (!N) return;
+  const oldPw = ITIM.zoom;
+  ITIM.zoom = Math.round(ITIM.zoom * factor);
+  ITIM.zoom = Math.max(1, Math.min(100, ITIM.zoom));
   if (cx !== undefined) {
-    const worldX = ITIM_PAN_X + cx;
-    const cyUnder = worldX / oldPw;
-    ITIM_PAN_X = Math.max(0, cyUnder * ITIM_ZOOM - cx);
-    ITIM_PAN_X = Math.min(ITIM_PAN_X, N * ITIM_ZOOM - 200);
+    const cyUnder = (ITIM.panX + cx) / oldPw;
+    ITIM.panX = Math.max(0, cyUnder * ITIM.zoom - cx);
   }
-  ITIM_PAN_X = Math.max(0, ITIM_PAN_X);
-
+  ITIM.panX = Math.max(0, Math.min(ITIM.panX, N * ITIM.zoom - 200));
   const waveWrap = document.getElementById("itim-wave-wrap");
-  if (waveWrap) waveWrap.scrollLeft = ITIM_PAN_X;
-
+  if (waveWrap) waveWrap.scrollLeft = ITIM.panX;
   buildInstrTimeline();
 }
 
+// ── Interaction ─────────────────────────────────────────────────
 function setupItimInteraction() {
   const waveWrap = document.getElementById("itim-wave-wrap");
-  const axisWrap = document.getElementById("itim-axis-wrap");
   const canvas = document.getElementById("cv-itimeline");
+  if (!waveWrap || !canvas) return;
 
-  if (!waveWrap) return;
-
-  // ── Sync axis scroll with wave scroll ──
+  // Scroll → re-render (debounced via rAF)
   waveWrap.addEventListener("scroll", () => {
-    ITIM_PAN_X = waveWrap.scrollLeft;
-    if (axisWrap) axisWrap.scrollLeft = waveWrap.scrollLeft;
+    ITIM.panX = waveWrap.scrollLeft;
+    _itimScheduleRender();
   });
 
-  // ── Wheel zoom ──
-  canvas.addEventListener("wheel", (e) => {
+  // Wheel zoom
+  const onWheel = (e) => {
     e.preventDefault();
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
-    const cx = mx + waveWrap.scrollLeft;
-    const factor = e.deltaY < 0 ? 1.25 : 0.8;
-    itimZoom(factor, cx);
-  }, { passive: false });
+    itimZoom(e.deltaY < 0 ? 1.3 : 1/1.3, mx + waveWrap.scrollLeft);
+  };
+  canvas.addEventListener("wheel", onWheel, { passive: false });
+  waveWrap.addEventListener("wheel", onWheel, { passive: false });
 
-  // Also handle wheel on axis
-  const axisCanvas = document.getElementById("cv-itim-axis");
-  if (axisCanvas) {
-    axisCanvas.addEventListener("wheel", (e) => {
-      e.preventDefault();
-      const rect = axisCanvas.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const cx = mx + (axisWrap ? axisWrap.scrollLeft : 0);
-      const factor = e.deltaY < 0 ? 1.25 : 0.8;
-      itimZoom(factor, cx);
-    }, { passive: false });
-  }
+  // Click → cursor
+  canvas.addEventListener("click", (e) => {
+    if (ITIM.drag) return;
+    const mx = e.clientX - canvas.getBoundingClientRect().left;
+    const cy = Math.round((mx + waveWrap.scrollLeft) / ITIM.zoom);
+    if (cy >= 0 && cy < ITIM.N) { ITIM.cursorCy = cy; buildInstrTimeline(); }
+  });
 
-  // ── Drag pan ──
+  // Drag pan
   canvas.addEventListener("mousedown", (e) => {
-    ITIM_DRAG = true;
-    ITIM_DRAG_X0 = e.clientX;
-    ITIM_PAN_X0 = waveWrap.scrollLeft;
-    canvas.style.cursor = "grabbing";
+    ITIM.drag = true; ITIM.dragX0 = e.clientX; ITIM.panX0 = waveWrap.scrollLeft;
+    waveWrap.classList.add("grabbing");
   });
   window.addEventListener("mousemove", (e) => {
-    if (!ITIM_DRAG) return;
-    const dx = ITIM_DRAG_X0 - e.clientX;
-    const scrollX = Math.max(0, ITIM_PAN_X0 + dx);
-    waveWrap.scrollLeft = scrollX;
-    ITIM_PAN_X = scrollX;
+    if (!ITIM.drag) return;
+    waveWrap.scrollLeft = Math.max(0, ITIM.panX0 + (ITIM.dragX0 - e.clientX));
+    ITIM.panX = waveWrap.scrollLeft;
   });
   window.addEventListener("mouseup", () => {
-    if (ITIM_DRAG) {
-      ITIM_DRAG = false;
-      canvas.style.cursor = "grab";
+    if (ITIM.drag) { ITIM.drag = false; waveWrap.classList.remove("grabbing"); }
+  });
+
+  // Keyboard: arrows move cursor
+  window.addEventListener("keydown", (e) => {
+    if (ITIM.N === 0) return;
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault();
+      const dir = e.key === "ArrowLeft" ? -1 : 1;
+      const prev = ITIM.cursorCy < 0 ? Math.floor((ITIM.panX + 200) / ITIM.zoom) : ITIM.cursorCy;
+      ITIM.cursorCy = Math.max(0, Math.min(ITIM.N - 1, prev + dir));
+      const cx = ITIM.cursorCy * ITIM.zoom;
+      if (cx < ITIM.panX + 40 || cx > ITIM.panX + waveWrap.clientWidth - 40) {
+        ITIM.panX = Math.max(0, cx - waveWrap.clientWidth / 2);
+        waveWrap.scrollLeft = ITIM.panX;
+      }
+      buildInstrTimeline();
+    } else if (e.key === "Escape") {
+      ITIM.cursorCy = -1; buildInstrTimeline();
     }
   });
 
-  // ── Reset button ──
-  const resetBtn = document.getElementById("btn-zoom-reset");
-  if (resetBtn) {
-    resetBtn.addEventListener("click", () => {
-      ITIM_ZOOM = 2;
-      ITIM_PAN_X = 0;
-      waveWrap.scrollLeft = 0;
-      if (axisWrap) axisWrap.scrollLeft = 0;
-      buildInstrTimeline();
-    });
-  }
-
-  canvas.style.cursor = "grab";
+  // Zoom buttons
+  const mid = () => waveWrap.clientWidth / 2;
+  document.getElementById("btn-zoom-in")?.addEventListener("click", () => itimZoom(1.5, mid()));
+  document.getElementById("btn-zoom-out")?.addEventListener("click", () => itimZoom(1/1.5, mid()));
+  document.getElementById("btn-zoom-fit")?.addEventListener("click", () => {
+    const N = _itimTotalCycles(); if (!N) return;
+    ITIM.zoom = Math.max(1, Math.floor((waveWrap.clientWidth - 44) / N));
+    ITIM.panX = 0; waveWrap.scrollLeft = 0; buildInstrTimeline();
+  });
+  document.getElementById("btn-zoom-reset")?.addEventListener("click", () => {
+    ITIM.zoom = 4; ITIM.panX = 0; ITIM.cursorCy = -1;
+    waveWrap.scrollLeft = 0; buildInstrTimeline();
+  });
 }
 
-// Wire up after DOM is ready
 setTimeout(setupItimInteraction, 200);
 
 function renderAll() {

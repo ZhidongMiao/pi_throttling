@@ -19,6 +19,7 @@ from pdn_sim3 import (
     StimulusGenerator, run_sim, run_all,
     V0_MV, V_SIGNOFF, STATE_NAMES, TOK
 )
+from pipeline import PIPE_DEPTH
 
 def results_to_json(results: dict, cycles: int) -> dict:
     """Convert SimResult objects to JSON-serializable dict."""
@@ -117,6 +118,7 @@ def results_to_json(results: dict, cycles: int) -> dict:
             "v_signoff":  V_SIGNOFF,
             "state_names": STATE_NAMES,
             "tok_table":  TOK,
+            "pipe_depth":  PIPE_DEPTH,
             "pdn_calib":  pdn_calib,
             "measured_ref": {
                 "0":909,"19":835,"40":855,"72":792,
