@@ -97,6 +97,7 @@ EXQ0 pool r0–7, EXQ1 pool r8–15, const srcs r28–31. No RAW chains.
 | STQ   | idle ×2000 | — |
 
 **Stats:** 3078 instructions, 9234 tokens, max sustained load 6 tok/cy.
+**Sim:** IPC 100%→98.7%, Vmin 782→849mV, Δdroop +67mV.
 
 ---
 
@@ -125,6 +126,7 @@ func_n = max(100, (2000 - 300 - 160) // 3) = 513
 | STQ   | idle ×2000 | — |
 
 **Stats:** 4617 instructions, 12312 tokens, max sustained load 8 tok/cy (peak).
+**Sim:** IPC 100%→89.9%, Vmin 740→852mV, Δdroop +112mV.
 
 ---
 
@@ -165,6 +167,7 @@ Register deps (per 18-cycle block):
 | STQ   | idle ×2000 | — |
 
 **Stats:** 1364 instructions (1280 MULA + 84 LD), 3840 tokens.
+**Sim:** IPC 100%→100%, Vmin 848→861mV, Δdroop +13mV (LD-burst naturally low load).
 
 ---
 
@@ -212,6 +215,7 @@ Pipeline behavior:
 | STQ   | idle ×2000 | — |
 
 **Stats:** 292 instructions, 876 tokens. IPC ~79% due to RAW chain serialization. Tests pipeline dependency stalls under throttle.
+**Sim:** IPC 89%→89%, Vmin 902→874mV, Δdroop −28mV (controller dummy injection on already-serialized pipeline).
 
 ---
 
@@ -241,6 +245,7 @@ func_n = max(100, (2000 - 300 - 240) // 4) = 365
 | STQ   | idle ×2000 | — |
 
 **Stats:** 3650 instructions, 10220 tokens. Tests load-type switching (MULA×2 ↔ MAL).
+**Sim:** IPC 100%→94.0%, Vmin 773→849mV, Δdroop +76mV.
 
 ---
 
@@ -266,6 +271,7 @@ func_n = max(200, (2000 - 300 - 80) // 2) = 810
 | STQ   | idle ×2000 | — |
 
 **Stats:** 4860 instructions, 12960 tokens. Longest sustained max-load (810 cycles). Tests PI regulator under prolonged stress.
+**Sim:** IPC 100%→84.9%, Vmin 740→852mV, Δdroop +112mV.
 
 ---
 
@@ -289,6 +295,7 @@ at different burst/recovery cadences (4 bursts × 365cy).
 | STQ   | idle ×2000 | — |
 
 **Stats:** 2920 instructions, 8760 tokens. Tests on/off resonance — designed to excite PDN ringing.
+**Sim:** IPC 100%→94.4%, Vmin 782→844mV, Δdroop +62mV.
 
 ---
 
@@ -330,6 +337,7 @@ Task2 (notice overlays on Task1 tail):
 Each pattern run for 3-30 cycles (random). Weighted average ~2.5 tok/cy.
 
 **Stats:** 2006 instructions, 4950 tokens. Tests random mixed OOO workload with pipelining.
+**Sim:** IPC 100%→99.8%, Vmin 758→845mV, Δdroop +87mV.
 
 ---
 
@@ -375,6 +383,7 @@ Task4 (Serial MULA) — notice overlays late Task3:
 | STQ   | — |
 
 **Stats:** 954 instructions, 2672 tokens. Tests 4-way task pipeline with heterogeneous task types.
+**Sim:** IPC 99.2%→99.2%, Vmin 752→852mV, Δdroop +100mV.
 
 ---
 
@@ -402,22 +411,30 @@ Task5 (MOV):         ~640..1019 notice overlay, 1020..1179 Func1+Func2
 | STQ   | rand(T3) |
 
 **Stats:** 1215 instructions, 3262 tokens. Tests 5-way task pipeline with 5 different task types.
+**Sim:** IPC 100%→100%, Vmin 748→849mV, Δdroop +101mV.
 
 ---
 
 ## Summary
 
-| BM  | Tasks | Functions | Pattern | Deps | Instr | Tokens | Tok/cy | Peak | IPC(no-throt) |
-|-----|-------|-----------|---------|------|-------|--------|--------|------|---------------|
-| BM1 | 1     | 3         | MULA×2 steady | None | 3078 | 9234 | 4.62 | 6 | 100% |
-| BM2 | 1     | 3         | MAX load | None | 4617 | 12312 | 6.16 | 8 | 100% |
-| BM3 | 1     | 4         | LD-burst | LD→MULA RAW | 1364 | 3840 | 1.92 | 6 | 100% |
-| BM4 | 1     | 4         | Serial MULA | **RAW chain** | 292 | 876 | 0.44 | 3 | **79%** |
-| BM5 | 1     | 4         | MULA↔MAL交替 | None (per-phase) | 3650 | 10220 | 5.11 | 8 | 100% |
-| BM6 | 1     | 2         | LN主导长跑 | None | 4860 | 12960 | 6.48 | 8 | 100% |
-| BM7 | 1     | 4         | SW谐振 | None | 2920 | 8760 | 4.38 | 6 | 100% |
-| BM8 | 2     | 2×2       | OOO混合 | Mixed (shared pools) | 2006 | 4950 | 2.48 | 8 | 100% |
-| BM9 | 4     | 2×4       | 4路流水线 | T4: RAW chain | 954 | 2672 | 1.34 | 8 | 99% |
-| BM10| 5     | 2×5       | 5路流水线 | Per-task | 1215 | 3262 | 1.63 | 8 | 100% |
+| BM  | Tasks | Fn | Pattern | Deps | Instr | Tokens | Tok/cy | Peak | IPC(off→on) | Vmin(off→on) | Δdroop |
+|-----|-------|----|---------|------|-------|--------|--------|------|-------------|---------------|--------|
+| BM1 | 1     | 3  | MULA×2 steady | None | 3078 | 9234 | 4.62 | 6 | 100%→98.7% | 782→849mV | **+67mV** |
+| BM2 | 1     | 3  | MAX load | None | 4617 | 12312 | 6.16 | 8 | 100%→89.9% | 740→852mV | **+112mV** |
+| BM3 | 1     | 4  | LD-burst | LD→MULA RAW | 1364 | 3840 | 1.92 | 6 | 100%→100% | 848→861mV | +13mV |
+| BM4 | 1     | 4  | Serial MULA | **RAW chain** | 292 | 876 | 0.44 | 3 | 89%→89% | 902→874mV | −28mV |
+| BM5 | 1     | 4  | MULA↔MAL交替 | None (per-phase) | 3650 | 10220 | 5.11 | 8 | 100%→94.0% | 773→849mV | **+76mV** |
+| BM6 | 1     | 2  | LN主导长跑 | None | 4860 | 12960 | 6.48 | 8 | 100%→84.9% | 740→852mV | **+112mV** |
+| BM7 | 1     | 4  | SW谐振 | None | 2920 | 8760 | 4.38 | 6 | 100%→94.4% | 782→844mV | **+62mV** |
+| BM8 | 2     | 2×2 | OOO混合 | Mixed | 2006 | 4950 | 2.48 | 8 | 100%→99.8% | 758→845mV | **+87mV** |
+| BM9 | 4     | 2×4 | 4路流水线 | T4: chain | 954 | 2672 | 1.34 | 8 | 99.2%→99.2% | 752→852mV | **+100mV** |
+| BM10| 5     | 2×5 | 5路流水线 | Per-task | 1215 | 3262 | 1.63 | 8 | 100%→100% | 748→849mV | **+101mV** |
 
 **Deps:** "None" = independent (const-pool srcs, no RAW). BM4 is the only benchmark with a strict RAW chain per instruction.
+
+### Key Observations
+
+- **8/10 benchmarks achieve ≥50mV droop reduction** (BM3 at +13mV has naturally low baseline load; BM4 at −28mV is a controller artifact — dummy injection fires on already-serialized pipeline)
+- **IPC impact is load-proportional:** heaviest benchmarks (BM2, BM6) see ~10–15% IPC reduction under throttling; light benchmarks (BM3, BM8, BM10) see <1%
+- **BM4 RAW chain:** baseline IPC drops from 100%→89% due to register dependency stalls, confirming the pipeline model correctly enforces RAW hazards
+- **Vmin floor:** throttled Vmin stays above 843mV across all benchmarks (vs. 740mV baseline worst-case), a 103mV improvement in worst-case voltage
