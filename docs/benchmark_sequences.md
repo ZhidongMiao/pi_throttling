@@ -246,7 +246,7 @@ Func2,4: 3 for-loops of _mal(body_len=5), ~24 iterations each → ~360cy
 | STQ   | idle ×2000 | — |
 
 **Stats:** 3630 ops, 10160 tokens. Tests load-type switching (MULA×2 ↔ MAL).
-**Sim:** IPC 100%→91.6%, Vmin 770→840mV, Δdroop +70mV, throttled droop 69mV ✓.
+**Sim:** IPC 100%→91.6%, Vmin 770→840mV, Δdroop +70mV, throttled droop 70mV ✓.
 
 ---
 
@@ -415,7 +415,7 @@ Task5: ~640..1019 notice overlay, 1020..1179 Func1+Func2
 | STQ   | rand(T3) |
 
 **Stats:** 1164 ops, 3191 tokens. Tests 5-way task pipeline with 5 different task types.
-**Sim:** IPC 100%→100%, Vmin 748→845mV, Δdroop +97mV, throttled droop 64mV ✓.
+**Sim:** IPC 100%→100%, Vmin 748→845mV, Δdroop +97mV, throttled droop 65mV ✓.
 
 ---
 

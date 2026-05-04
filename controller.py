@@ -47,7 +47,7 @@ class ThrottleParams:
 
     # Phase 2: PID regulate (per-instruction credit range)
     # Target: droop < 80mV while maximising IPC.
-    # PI target is aspirational — soft ceiling at 40mV is the real governor.
+    # PI target is aspirational — soft ceiling at 38mV is the real governor.
     target_droop_mv:    float = 68.0
     pi_kp:              float = 0.10
     pi_ki:              float = 0.003
