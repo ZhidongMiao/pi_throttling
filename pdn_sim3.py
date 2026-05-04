@@ -285,100 +285,202 @@ class StimulusGenerator:
                 seq += self._idle(gap)
         return seq, body_start
 
+    # ── For-loop builder ───────────────────────────────────────────────
+    def _for_loop(self, body_gen, body_len: int, iterations: int):
+        """Generate a for-loop: body repeated `iterations` times.
+
+        Each iteration calls body_gen(body_len) with a fresh set of arch
+        registers (the generator creates its own RegState internally),
+        modelling independent loop iterations — same arch regs, different
+        phys regs after renaming.
+
+        Args:
+            body_gen: callable(n) → list of InstrGroup (one iteration)
+            body_len: cycles per iteration
+            iterations: number of loop iterations (10–50)
+        """
+        seq = []
+        for _ in range(iterations):
+            seq += body_gen(body_len)
+        return seq
+
+    def _make_func(self, loops, total_cy: int):
+        """Build a function from 2–5 for-loops filling total_cy cycles.
+
+        Args:
+            loops: list of (body_gen, body_len, name) tuples
+            total_cy: target function length in cycles
+
+        Loop iterations are distributed to fill total_cy, with each loop
+        getting 10–50 iterations. Remaining cycles are padded with idle.
+        """
+        n = len(loops)
+        # Total cycles per iteration across all loop bodies.
+        # Divide total_cy proportionally: each set of loops takes total_per_iter
+        # cycles, so base_iter = total_cy // total_per_iter distributes evenly.
+        total_per_iter = sum(bl for _, bl, _ in loops)
+        base_iter = total_cy // max(1, total_per_iter)
+        base_iter = max(10, min(50, base_iter))
+
+        seq = []
+        for i, (gen, body_len, _name) in enumerate(loops):
+            if i == n - 1:
+                # Last loop: use remaining cycles
+                rem = total_cy - len(seq)
+                n_iter = max(10, min(50, rem // max(1, body_len)))
+            else:
+                n_iter = base_iter + self.rng.randint(-3, 3)
+                n_iter = max(10, min(50, n_iter))
+
+            seq += self._for_loop(gen, body_len, n_iter)
+
+        # Pad to exact length
+        if len(seq) < total_cy:
+            seq += self._idle(total_cy - len(seq))
+        return seq[:total_cy]
+
     # ══════════════════════════════════════════════════════════════════
-    # Benchmarks (task/function model)
+    # Benchmarks (task/function/for-loop model)
     # ══════════════════════════════════════════════════════════════════
+    #
+    # Each benchmark:
+    #   Task → notice(300cy) → Func1 → gap(80cy) → Func2 → ...
+    #   Each Func → 2–5 for-loops, each iterating 10–50× with body 5–30cy.
+    #
+    # For-loop body generators create fresh RegState per iteration,
+    # modelling independent loop iterations (same arch regs, renamed to
+    # different phys regs each iteration).
 
     def _bm1(self, cy):
-        """Single task: 3 MULA×2 functions, 300cy notice, 80cy gaps."""
-        func_n = max(100, (cy - self.NOTICE - 160) // 3)
-        seq, _ = self._task([
-            (self._mula2, func_n),
-            (self._mula2, func_n),
-            (self._mula2, func_n),
-        ], gap=80)
+        """Single task: 3 MULA×2 functions, each with 3 for-loops."""
+        func_n = max(100, (cy - self.NOTICE - 160) // 3)  # = 513
+        def make_func(n):
+            # 3 for-loops, body=8cy MULA×2, ~21 iterations each
+            loops = [
+                (self._mula2, 8, "mula2_L1"),
+                (self._mula2, 8, "mula2_L2"),
+                (self._mula2, 8, "mula2_L3"),
+            ]
+            return self._make_func(loops, n)
+        seq, _ = self._task([(make_func, func_n)] * 3, gap=80)
         return seq[:cy]
 
     def _bm2(self, cy):
-        """Single task: 3 MAL functions (max load), 300cy notice, 80cy gaps."""
-        func_n = max(100, (cy - self.NOTICE - 160) // 3)
-        seq, _ = self._task([
-            (self._mal, func_n),
-            (self._mal, func_n),
-            (self._mal, func_n),
-        ], gap=80)
+        """Single task: 3 MAL functions (max load), each with 3 for-loops."""
+        func_n = max(100, (cy - self.NOTICE - 160) // 3)  # = 513
+        def make_func(n):
+            loops = [
+                (self._mal, 5, "mal_L1"),
+                (self._mal, 5, "mal_L2"),
+                (self._mal, 5, "mal_L3"),
+            ]
+            return self._make_func(loops, n)
+        seq, _ = self._task([(make_func, func_n)] * 3, gap=80)
         return seq[:cy]
 
     def _bm3(self, cy):
-        """Single task: 4 LD-burst functions, 300cy notice, 80cy gaps."""
-        func_n = max(80, (cy - self.NOTICE - 240) // 4)
-        seq, _ = self._task([
-            (self._ld_burst, func_n),
-            (self._ld_burst, func_n),
-            (self._ld_burst, func_n),
-            (self._ld_burst, func_n),
-        ], gap=80)
+        """Single task: 4 LD-burst functions, each with 3 for-loops."""
+        func_n = max(80, (cy - self.NOTICE - 240) // 4)  # = 365
+        def make_func(n):
+            # LD-burst block = 18cy (1 LD + 9 idle + 8 MULA×2)
+            loops = [
+                (self._ld_burst, 18, "ld_burst_L1"),
+                (self._ld_burst, 18, "ld_burst_L2"),
+                (self._ld_burst, 18, "ld_burst_L3"),
+            ]
+            return self._make_func(loops, n)
+        seq, _ = self._task([(make_func, func_n)] * 4, gap=80)
         return seq[:cy]
 
     def _bm4(self, cy):
-        """Single task: 4 serial-MULA functions, 300cy notice, 80cy gaps."""
-        func_n = max(60, (cy - self.NOTICE - 240) // 4)
-        seq, _ = self._task([
-            (self._serial_mula, func_n),
-            (self._serial_mula, func_n),
-            (self._serial_mula, func_n),
-            (self._serial_mula, func_n),
-        ], gap=80)
+        """Single task: 4 serial-MULA functions, each with 3 for-loops (RAW chain)."""
+        func_n = max(60, (cy - self.NOTICE - 240) // 4)  # = 365
+        def make_func(n):
+            # serial_mula pattern: 1 MULA + 4 idle = 5cy per iteration
+            loops = [
+                (self._serial_mula, 5, "serial_L1"),
+                (self._serial_mula, 5, "serial_L2"),
+                (self._serial_mula, 5, "serial_L3"),
+            ]
+            return self._make_func(loops, n)
+        seq, _ = self._task([(make_func, func_n)] * 4, gap=80)
         return seq[:cy]
 
     def _bm5(self, cy):
-        """Single task: 4 alternating functions, 300cy notice, 80cy gaps."""
-        func_n = max(100, (cy - self.NOTICE - 240) // 4)
+        """Single task: 4 alternating functions, each with 3 for-loops."""
+        func_n = max(100, (cy - self.NOTICE - 240) // 4)  # = 365
+        def make_mula2_func(n):
+            loops = [
+                (self._mula2, 8, "mula2_L1"),
+                (self._mula2, 8, "mula2_L2"),
+                (self._mula2, 8, "mula2_L3"),
+            ]
+            return self._make_func(loops, n)
+        def make_mal_func(n):
+            loops = [
+                (self._mal, 5, "mal_L1"),
+                (self._mal, 5, "mal_L2"),
+                (self._mal, 5, "mal_L3"),
+            ]
+            return self._make_func(loops, n)
         seq, _ = self._task([
-            (lambda n: self._mula2(n), func_n),
-            (lambda n: self._mal(n), func_n),
-            (lambda n: self._mula2(n), func_n),
-            (lambda n: self._mal(n), func_n),
+            (make_mula2_func, func_n),
+            (make_mal_func, func_n),
+            (make_mula2_func, func_n),
+            (make_mal_func, func_n),
         ], gap=80)
         return seq[:cy]
 
     def _bm6(self, cy):
-        """Single task: 2 large MAL functions, 300cy notice, 80cy gap."""
-        func_n = max(200, (cy - self.NOTICE - 80) // 2)
-        seq, _ = self._task([
-            (self._mal, func_n),
-            (self._mal, func_n),
-        ], gap=80)
+        """Single task: 2 large MAL functions, each with 4 for-loops."""
+        func_n = max(200, (cy - self.NOTICE - 80) // 2)  # = 810
+        def make_func(n):
+            loops = [
+                (self._mal, 5, "mal_L1"),
+                (self._mal, 5, "mal_L2"),
+                (self._mal, 5, "mal_L3"),
+                (self._mal, 5, "mal_L4"),
+            ]
+            return self._make_func(loops, n)
+        seq, _ = self._task([(make_func, func_n)] * 2, gap=80)
         return seq[:cy]
 
     def _bm7(self, cy):
-        """Single task: 4 MULA×2 functions w/ recovery gaps, 300cy notice."""
-        func_n = max(100, (cy - self.NOTICE - 240) // 4)
-        seq, _ = self._task([
-            (self._mula2, func_n),
-            (self._mula2, func_n),
-            (self._mula2, func_n),
-            (self._mula2, func_n),
-        ], gap=80)
+        """Single task: 4 MULA×2 functions w/ recovery gaps, each with 3 for-loops."""
+        func_n = max(100, (cy - self.NOTICE - 240) // 4)  # = 365
+        def make_func(n):
+            loops = [
+                (self._mula2, 8, "mula2_L1"),
+                (self._mula2, 8, "mula2_L2"),
+                (self._mula2, 8, "mula2_L3"),
+            ]
+            return self._make_func(loops, n)
+        seq, _ = self._task([(make_func, func_n)] * 4, gap=80)
         return seq[:cy]
 
     def _bm8(self, cy):
-        """Dual task: 2×2 random-mixed functions, 300cy notice each."""
+        """Dual task: 2×2 random-mixed functions, each with 3 for-loops."""
+        func_n1 = max(120, (cy // 2 - self.NOTICE - 80) // 2)  # = 310
+        def make_func(n):
+            loops = [
+                (self._rand_mixed, 10, "rand_L1"),
+                (self._rand_mixed, 10, "rand_L2"),
+                (self._rand_mixed, 10, "rand_L3"),
+            ]
+            return self._make_func(loops, n)
         # Task 1
-        func_n1 = max(120, (cy // 2 - self.NOTICE - 80) // 2)
         t1, _ = self._task([
-            (self._rand_mixed, func_n1),
-            (self._rand_mixed, func_n1),
+            (make_func, func_n1),
+            (make_func, func_n1),
         ], gap=80)
         # Task 2 notice + body
         t2_notice = self.NOTICE
         t2, _ = self._task([
-            (self._rand_mixed, func_n1),
-            (self._rand_mixed, func_n1),
+            (make_func, func_n1),
+            (make_func, func_n1),
         ], gap=80, notice=t2_notice)
-        # Task 2 notice fires during late Task 1 — overlay notice on tail of t1
+        # Overlay task 2 notice on tail of task 1
         seq = t1[:cy]
-        # Add task 2 overlay: notice starts 300cy before task 2
         t2_start = len(t1)
         for i, g in enumerate(t2):
             idx = t2_start + i
@@ -387,12 +489,10 @@ class StimulusGenerator:
             if idx >= len(seq):
                 seq.append(g)
             else:
-                # Overlay: task 2 notice may replace idle cycles at end of task 1
                 if g.task_notice > 0 and seq[idx].is_empty:
                     seq[idx] = g
                 elif g.task_notice > 0:
                     seq[idx].task_notice = max(seq[idx].task_notice, g.task_notice)
-                # Non-notice (actual instructions) extend the sequence
                 elif not g.is_empty:
                     if idx < len(seq) and seq[idx].is_empty:
                         seq[idx] = g
@@ -401,28 +501,28 @@ class StimulusGenerator:
         return seq[:cy]
 
     def _bm9(self, cy):
-        """4 tasks × 2 functions: MULA→MAL→LD→SerialMULA, 300cy notice each.
-
-        Task notices for N+1 fire during the function gap + tail of task N.
-        """
+        """4 tasks × 2 functions: MULA→MAL→LD→SerialMULA, each func with 2 for-loops."""
+        def mk(gen, blen):
+            return lambda n, g=gen, b=blen: self._make_func([(g, b, "L1"), (g, b, "L2")], n)
         tasks = [
-            [("mula2", self._mula2), ("mula2", self._mula2)],
-            [("mal", self._mal), ("mal", self._mal)],
-            [("ld_burst", self._ld_burst), ("ld_burst", self._ld_burst)],
-            [("serial", self._serial_mula), ("serial", self._serial_mula)],
+            [("mula2", mk(self._mula2, 5)), ("mula2", mk(self._mula2, 5))],
+            [("mal", mk(self._mal, 5)), ("mal", mk(self._mal, 5))],
+            [("ld", mk(self._ld_burst, 18)), ("ld", mk(self._ld_burst, 18))],
+            [("serial", mk(self._serial_mula, 5)), ("serial", mk(self._serial_mula, 5))],
         ]
         return self._build_multitask(cy, tasks)
 
     def _bm10(self, cy):
-        """5 tasks × 2 functions: MAL→Alternating→Random→LD+MULA→MOV, 300cy notice."""
+        """5 tasks × 2 functions: MAL→Alternating→Random→LD+MULA→MOV, each with 2 for-loops."""
+        def mk(gen, blen):
+            return lambda n, g=gen, b=blen: self._make_func([(g, b, "L1"), (g, b, "L2")], n)
         tasks = [
-            [("mal", self._mal), ("mal", self._mal)],
-            [("alt", lambda n: self._alternating(n, 50)),
-             ("alt", lambda n: self._alternating(n, 50))],
-            [("rand", self._rand_mixed), ("rand", self._rand_mixed)],
-            [("ld_mula", lambda n: self._ld_burst(n)),
-             ("ld_mula", lambda n: self._ld_burst(n))],
-            [("mov", self._mov), ("mov", self._mov)],
+            [("mal", mk(self._mal, 5)), ("mal", mk(self._mal, 5))],
+            [("alt", mk(lambda x: self._alternating(x, 50), 20)),
+             ("alt", mk(lambda x: self._alternating(x, 50), 20))],
+            [("rand", mk(self._rand_mixed, 10)), ("rand", mk(self._rand_mixed, 10))],
+            [("ld_mula", mk(self._ld_burst, 18)), ("ld_mula", mk(self._ld_burst, 18))],
+            [("mov", mk(self._mov, 2)), ("mov", mk(self._mov, 2))],
         ]
         return self._build_multitask(cy, tasks)
 

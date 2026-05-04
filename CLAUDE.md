@@ -58,11 +58,12 @@ python3 pdn_sim3.py
 
 | Layer | Threshold | Action |
 |-------|-----------|--------|
-| PI regulate | target 68mV droop | Adjust credit 1–3 (Kp=0.10, Ki=0.003) |
-| Soft ceiling | 40mV droop | Cap credit ≤ 2 |
-| Emergency brake | 65mV droop | Cap credit ≤ 1, hold 30cy |
+| PI regulate | target 68mV droop | Adjust credit 1–3 (Kp=0.10, Ki=0.003, Kd=1.0) |
+| Soft ceiling | 38mV droop | Cap credit ≤ 2 |
+| Predictive rate | 2.0 mV/cy decline | Cap credit ≤ 1 |
+| Emergency brake | 60mV droop | Cap credit ≤ 1, hold 50cy |
 
-Key design: PI target is aspirational (68mV) — the soft ceiling at 40mV is the real governor, capping credit early to prevent the PDN from accumulating charge deficit that would breach 80mV. The 25mV gap between soft ceiling (40mV) and emergency (65mV) provides graduated escalation. Resonance damping credit bumps are gated by the soft ceiling to prevent credit oscillation during recovery.
+Key design: PI target is aspirational (68mV) — the soft ceiling at 38mV is the primary governor, capping credit early to prevent PDN charge deficit accumulation. The 22mV gap between soft ceiling (38mV) and emergency (60mV) provides graduated escalation. Predictive rate limiter at 2.0 mV/cy catches rapid droop before emergency trigger. Credit caps scale by workload width: credit=2 allows full throughput for 2-instr/cycle workloads (MULA×2) but limits 3-instr/cycle workloads (MAL) to 66%.
 
 ## Simulation Output
 

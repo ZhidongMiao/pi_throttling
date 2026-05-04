@@ -62,7 +62,7 @@ class ThrottleParams:
     # Droop soft ceiling — primary governor. Caps credit→2 early to
     # prevent PDN from accumulating charge deficit that would breach 80mV.
     soft_ceiling_enabled: bool  = True
-    soft_ceiling_droop_mv: float = 40.0
+    soft_ceiling_droop_mv: float = 38.0
     soft_ceiling_credit:   int   = 2
 
     # HOLD / RAMPDN
@@ -95,13 +95,13 @@ class ThrottleParams:
 
     # Voltage emergency brake (per-instruction credit)
     emergency_enabled:  bool  = True
-    emergency_droop_mv: float = 65.0
+    emergency_droop_mv: float = 60.0
     emergency_credit:   int   = 1
-    emergency_hold:     int   = 30
+    emergency_hold:     int   = 50
 
     # Predictive droop rate limiter (per-instruction credit)
     pred_rate_enabled:  bool  = True
-    pred_rate_threshold: float = 2.5
+    pred_rate_threshold: float = 2.0
     pred_rate_credit:   int   = 1
 
     # Sustained high-load lock (SHL) — disabled by default
