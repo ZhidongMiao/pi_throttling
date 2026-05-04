@@ -37,7 +37,7 @@ class ThrottleParams:
       Phase 2 — REGULATE: PI controller adjusts credit dynamically using an
                   internal PDN observer (no hardware voltage ADC needed).
     """
-    version: str = "v3"
+    version: str = "v4"
 
     # Phase 1: Extended ramp (per-instruction credit, 1-2 inst/cycle)
     ramp_credits:    tuple = (1, 2)
@@ -46,9 +46,9 @@ class ThrottleParams:
     re_ramp_div:     int   = 4
 
     # Phase 2: PID regulate (per-instruction credit range)
-    # D-term provides feedforward: anticipatory credit reduction when V is
-    # dropping fast (PDN discharge phase), credit increase when V recovers.
-    target_droop_mv:    float = 55.0
+    # Target: droop < 80mV while maximising IPC.
+    # PI target is aspirational — soft ceiling at 40mV is the real governor.
+    target_droop_mv:    float = 68.0
     pi_kp:              float = 0.10
     pi_ki:              float = 0.003
     pi_kd:              float = 1.0
@@ -58,6 +58,12 @@ class ThrottleParams:
     pi_settle_cycles:   int   = 15
     pi_update_interval: int   = 8
     pi_deadband_mv:     float = 15.0
+
+    # Droop soft ceiling — primary governor. Caps credit→2 early to
+    # prevent PDN from accumulating charge deficit that would breach 80mV.
+    soft_ceiling_enabled: bool  = True
+    soft_ceiling_droop_mv: float = 40.0
+    soft_ceiling_credit:   int   = 2
 
     # HOLD / RAMPDN
     hold_init:    int = 20
@@ -89,7 +95,7 @@ class ThrottleParams:
 
     # Voltage emergency brake (per-instruction credit)
     emergency_enabled:  bool  = True
-    emergency_droop_mv: float = 40.0
+    emergency_droop_mv: float = 65.0
     emergency_credit:   int   = 1
     emergency_hold:     int   = 30
 
@@ -366,7 +372,7 @@ class ThrottleController:
             if obs_droop > self.p.emergency_droop_mv:
                 self.emergency_active = True
                 credit = min(credit, self.p.emergency_credit)
-            elif self.emergency_timer <= 0 and obs_v > (V_SIGNOFF + 50):
+            elif self.emergency_timer <= 0 and obs_droop < (self.p.emergency_droop_mv - 20):
                 self.emergency_active = False
             if self.emergency_active:
                 if self.emergency_timer > 0:
@@ -378,13 +384,7 @@ class ThrottleController:
                 self.emergency_active = True
                 self.emergency_timer = self.p.emergency_hold
 
-        # 2. Droop soft ceiling (graduated throttle before emergency)
-        obs_v = self.obs.voltage
-        obs_droop_soft = V0_MV - obs_v
-        if obs_droop_soft > 30.0:
-            credit = min(credit, 2)
-
-        # 3. Predictive droop rate limiter
+        # 2. Predictive droop rate limiter
         if self.p.pred_rate_enabled:
             if self.prev_decline > self.p.pred_rate_threshold:
                 credit = min(credit, self.p.pred_rate_credit)
@@ -394,16 +394,24 @@ class ThrottleController:
             credit = min(credit, self.p.m5_lock_credit)
 
         # 4. Feedforward resonance damping — per-cycle credit modulation
-        # based on dV/dt.  Only active when pipeline is backlogged
-        # (heavy_queued), indicating sustained load that excites PDN resonance.
         if self.state == State.REGULATE and not self.m5_lock and heavy_queued:
-            decline = self.prev_decline  # >0 when V is dropping
+            decline = self.prev_decline
             if decline > 3.0:
-                # PDN entering steep resonant discharge — preemptively reduce
                 credit = max(1, credit - 1)
             elif decline < -2.5:
-                # PDN in strong recovery — safe to use headroom
-                credit = min(self.p.pi_credit_max, credit + 1)
+                # Only increase credit during recovery if droop is below soft ceiling
+                obs_v = self.obs.voltage
+                obs_droop = V0_MV - obs_v
+                if obs_droop <= self.p.soft_ceiling_droop_mv:
+                    credit = min(self.p.pi_credit_max, credit + 1)
+
+        # 5. Droop soft ceiling — FINAL clamp (after resonance damping,
+        #    to prevent recovery credit bumps from breaching the ceiling).
+        if self.p.soft_ceiling_enabled:
+            obs_v = self.obs.voltage
+            obs_droop_soft = V0_MV - obs_v
+            if obs_droop_soft > self.p.soft_ceiling_droop_mv:
+                credit = min(credit, self.p.soft_ceiling_credit)
 
         # Sync PI credit to actual credit on REGULATE entry
         if self.state == State.REGULATE and self._prev_state != State.REGULATE:

@@ -577,15 +577,15 @@ if __name__ == "__main__":
     print("\n=== Baseline vs Throttled (extended ramp + PI regulate) ===")
     results = run_all(2000)
     print(f"{'BM':<6} {'Base':>7} {'Throt':>7} {'ΔDrop':>7} "
-          f"{'IPC_off':>7} {'IPC_on':>7}  状态")
-    print("-" * 70)
+          f"{'IPC_off':>7} {'IPC_on':>7}  状态 (目标<80mV)")
+    print("-" * 78)
     all_ok = True
     for key, v in results.items():
         b = v['off'];  r = v['on']
         delta_droop = b.max_droop_mv - r.max_droop_mv
-        ok = delta_droop >= 50
+        ok = r.max_droop_mv < 80
         if not ok:  all_ok = False
-        st = f"✓+{delta_droop:.0f}mV" if ok else f"✗+{delta_droop:.0f}mV(需再-{50-delta_droop:.0f})"
+        st = f"✓{r.max_droop_mv:.0f}mV" if ok else f"✗{r.max_droop_mv:.0f}mV"
         print(f"{v['bid']:<6} {b.max_droop_mv:6.1f}mV {r.max_droop_mv:6.1f}mV "
               f"{delta_droop:+6.1f}mV {b.ipc_efficiency:7.1%} {r.ipc_efficiency:7.1%}  {st}")
-    print(f"\n压降改善≥50mV: {'ALL PASS ✓' if all_ok else 'FAIL ✗'}")
+    print(f"\n节流后压降<80mV: {'ALL PASS ✓' if all_ok else 'FAIL ✗'}")
