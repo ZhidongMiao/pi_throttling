@@ -118,4 +118,4 @@ python3 build_standalone.py --cycles 2000
 - Token 表：`mula=3, ln=4, exp=4, mul=2, add=2, mov=1, ld=0, st=1`
 - 流水线深度：`ln/exp=14, mula=9, ld=10, mul/add=8, mov=6, st=4`
 - 寄存器文件：32 架构寄存器，100 物理寄存器（68 重命名池）
-- 硬件约束：`mula`（EXQ0/EXQ1）与 `exp`/`ln`（LNQ）不能同周期发射
+- 发射约束：每队列每周期最多 1 条指令，不同队列可并发

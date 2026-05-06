@@ -52,7 +52,7 @@ python3 pdn_sim3.py
 - Pipeline depths: `ln/exp=14, mula=9, ld=10, mul/add=8, mov=6, st=4`
 - PDN: 7th-order IIR (3-mode physics, discretized at Ts=0.625ns). State: 7 floats.
 - Register file: 32 arch regs, 100 phys regs (68 rename pool).
-- Hardware constraint: `mula` (EXQ0/EXQ1) and `exp`/`ln` (LNQ) cannot issue in the same cycle.
+- No per-cycle co-issue restrictions beyond queue capacity (single-issue per queue per cycle).
 
 ### Controller Parameters (v4)
 

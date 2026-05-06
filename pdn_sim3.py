@@ -24,7 +24,7 @@ from pdn import (
     FREQ_GHZ, DT_S
 )
 from pipeline import (
-    InstrGroup, PipelineModel, mg, is_legal_issue, enforce_issue_constraint,
+    InstrGroup, PipelineModel, mg,
     TOK, PIPE_DEPTH, ARCH_REGS, PHYS_REGS, RENAME_POOL,
 )
 from controller import (

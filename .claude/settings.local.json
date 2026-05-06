@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 *)",
+      "Bash(pip install *)",
+      "Bash(apt-cache search *)",
+      "Bash(sudo apt *)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:api.github.com)",
+      "Bash(pip3 list *)",
+      "Bash(pip3 install *)",
+      "Bash(apt list *)",
+      "Bash(dpkg -l)",
+      "Bash(/home/dxl/my_project/pi_throttling/.venv/bin/pip install *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8080/dashboard.html)",
+      "Bash(rm /home/dxl/my_project/pi_throttling/.claude/settings.json /home/dxl/my_project/pi_throttling/.claude/skills/debug-issue.md /home/dxl/my_project/pi_throttling/.claude/skills/explore-codebase.md /home/dxl/my_project/pi_throttling/.claude/skills/refactor-safely.md /home/dxl/my_project/pi_throttling/.claude/skills/review-changes.md)",
+      "Bash(rmdir /home/dxl/my_project/pi_throttling/.claude/skills)"
+    ]
+  }
+}

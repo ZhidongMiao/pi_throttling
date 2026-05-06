@@ -80,8 +80,7 @@ DagBlock(name="mula2_kernel")
    where `next_free_slot(port)` tracks the last-used cycle for that queue
    (single-issue-per-queue constraint).
 4. **Merge** — nodes sharing the same `issue_cy` are bundled into one
-   `InstrGroup`.  The MULA/LN hardware interlock is enforced: if a bundle
-   contains both mula and ln/exp, the ln/exp is deferred by one cycle.
+   `InstrGroup`.
 5. **Idle padding** — cycles with no scheduled instructions become
    `InstrGroup()` (all ports empty).
 
@@ -216,7 +215,7 @@ operands).
 
 - **Placeholders**: none.
 - **Internal consistency**: DagBlock scheduling respects single-issue
-  constraint and MULA/LN interlock.  Cross-block registers use fixed pool (24–27).
+  constraint.  Cross-block registers use fixed pool (24–27).
 - **Scope**: focused on instruction generation only — no pipeline/controller/PDN
   changes.
 - **Ambiguity**: "round-robin EXQ0/EXQ1" — explicitly: `default_port()` picks

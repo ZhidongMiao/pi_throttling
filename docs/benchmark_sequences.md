@@ -15,7 +15,7 @@
 | LD   | 0     | 10         | LDQ         |
 | ST   | 1     | 4          | STQ         |
 
-**Constraints:** MULA + LN/EXP cannot issue in the same cycle (hardware interlock).
+**Constraints:** Single issue per queue per cycle. Different queues may issue concurrently.
 
 ## Register File Architecture
 

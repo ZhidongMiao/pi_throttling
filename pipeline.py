@@ -124,24 +124,6 @@ def mg(e0=None, e1=None, lnq=None, ldq=None, stq=None,
                       st_dst=st_dst, st_src=st_src)
 
 
-def is_legal_issue(grp: InstrGroup) -> bool:
-    """Check MULA / LN/EXP co-issue constraint (at DEC level for backward compat)."""
-    has_mula = (grp.exq0 == "mula") or (grp.exq1 == "mula")
-    has_trans = grp.lnq in ("ln", "exp")
-    return not (has_mula and has_trans)
-
-
-def enforce_issue_constraint(grp: InstrGroup) -> InstrGroup:
-    """If MULA+LN/EXP conflict, squash LNQ (hardware interlock).
-
-    Kept for backward compatibility. The constraint is now also enforced
-    inside PipelineModel at issue time.
-    """
-    if not is_legal_issue(grp):
-        return InstrGroup(exq0=grp.exq0, exq1=grp.exq1, lnq=None, ldq=grp.ldq, stq=grp.stq)
-    return grp
-
-
 # ══════════════════════════════════════════════════════════════════════
 # MicroOp — a single renamed instruction in the pipeline
 # ══════════════════════════════════════════════════════════════════════
@@ -476,13 +458,6 @@ class PipelineModel:
         lnq_cand  = _oldest_ready(self.lnq_wait)
         stq_cand  = _oldest_ready(self.stq_wait)
         ldq_cand  = _oldest_ready(self.ldq)
-
-        # MULA + LN/EXP co-issue constraint
-        has_mula = ((exq0_cand and exq0_cand.op == "mula") or
-                    (exq1_cand and exq1_cand.op == "mula"))
-        has_trans = lnq_cand and lnq_cand.op in ("ln", "exp")
-        if has_mula and has_trans:
-            lnq_cand = None
 
         return {"exq0": exq0_cand, "exq1": exq1_cand, "lnq": lnq_cand,
                 "stq": stq_cand, "ldq": ldq_cand}
